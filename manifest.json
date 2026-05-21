@@ -1,0 +1,19 @@
+{
+  "name": "Stadium Workout",
+  "short_name": "Stadium",
+  "id": "/workout-app/",
+  "start_url": "/workout-app/",
+  "scope": "/workout-app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E0F12",
+  "theme_color": "#0E0F12",
+  "icons": [
+    {
+      "src": "/workout-app/icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
