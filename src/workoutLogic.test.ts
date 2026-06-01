@@ -97,15 +97,17 @@ describe('workoutLogic', () => {
     const s = mkSession();
     // Sample bench has 3 logged sets: 10×40, 8×40, 9×40 = 400+320+360 = 1080
     // No other logged sets. Total reps = 27. Total sets = 3.
+    const now = Date.now();
     const summary = summarizeWorkout(
       s.workout,
-      Date.now() - 25 * 60 * 1000, // started 25 min ago
-      Date.now(),
+      now - 25 * 60 * 1000, // started 25 min ago
+      now,
     );
     expect(summary.totalSets).toBe(3);
     expect(summary.totalReps).toBe(27);
     expect(summary.totalVolume).toBe(1080);
     expect(summary.duration).toBe('25 min');
+    expect(summary.completedAtMs).toBe(now);
   });
 
   test('summarizeWorkout excludes BW sets from volume but includes them in reps', () => {

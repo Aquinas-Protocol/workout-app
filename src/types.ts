@@ -34,6 +34,7 @@ export type Workout = {
   totalVolume?: number;
   totalSets?: number;
   totalReps?: number;
+  completedAtMs?: number;
 };
 
 export type Focus = { exId: string; setIdx: number };

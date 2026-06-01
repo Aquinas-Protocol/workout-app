@@ -70,6 +70,7 @@ export function summarizeWorkout(
     totalSets,
     totalReps,
     totalVolume,
+    completedAtMs: nowMs,
   };
 }
 

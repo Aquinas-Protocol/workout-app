@@ -24,6 +24,7 @@ import type { ActiveSession, Week, Workout } from './src/types';
 import {
   appendHistory,
   clearWeek,
+  loadHistory,
   loadLastTemplates,
   loadWeek,
   saveLastTemplates,
@@ -43,9 +44,12 @@ import {
   ConfirmSheet,
   type ConfirmConfig,
 } from './src/components/ConfirmSheet';
+import { TabBar, type TabKey } from './src/components/TabBar';
 import { WeekScreen } from './src/screens/Week';
 import { WorkoutScreen } from './src/screens/Workout';
 import { ImportWeekScreen } from './src/screens/ImportWeek';
+import { HistoryScreen } from './src/screens/History';
+import { PastWorkoutScreen } from './src/screens/PastWorkout';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -56,7 +60,9 @@ type AppView =
       kind: 'import-week';
       initialLabel?: string;
       initialTemplates?: Workout[];
-    };
+    }
+  | { kind: 'history' }
+  | { kind: 'history-detail'; index: number };
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -72,6 +78,7 @@ export default function App() {
 
   const [week, setWeek] = useState<Week | null>(null);
   const [lastTemplates, setLastTemplates] = useState<Workout[] | null>(null);
+  const [history, setHistory] = useState<Workout[] | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<AppView>({ kind: 'week' });
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
@@ -84,15 +91,22 @@ export default function App() {
   // Hydrate from storage.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadWeek(), loadLastTemplates()]).then(([w, t]) => {
-      if (cancelled) return;
-      setWeek(w);
-      setLastTemplates(t);
-      setHydrated(true);
-    });
+    Promise.all([loadWeek(), loadLastTemplates(), loadHistory()]).then(
+      ([w, t, h]) => {
+        if (cancelled) return;
+        setWeek(w);
+        setLastTemplates(t);
+        setHistory(h);
+        setHydrated(true);
+      },
+    );
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const refreshHistory = useCallback(() => {
+    loadHistory().then(setHistory).catch(() => {});
   }, []);
 
   // Persist week. Gated on hydration so the initial null doesn't clobber storage.
@@ -192,7 +206,10 @@ export default function App() {
           label: 'Save & finish',
           onPress: () => {
             const { week: next, summary } = finishWorkout(week, workoutId);
-            if (summary) appendHistory(summary).catch(() => {});
+            if (summary) {
+              appendHistory(summary).catch(() => {});
+              setHistory(h => (h ? [summary, ...h] : [summary]));
+            }
             setWeek(next);
             setView({ kind: 'week' });
             Haptics.notificationAsync(
@@ -255,6 +272,26 @@ export default function App() {
     [view],
   );
 
+  const onTabChange = useCallback(
+    (key: TabKey) => {
+      if (key === 'history') {
+        refreshHistory();
+        setView({ kind: 'history' });
+      } else {
+        setView({ kind: 'week' });
+      }
+    },
+    [refreshHistory],
+  );
+
+  const onTapHistoryRow = useCallback((index: number) => {
+    setView({ kind: 'history-detail', index });
+  }, []);
+
+  const onBackToHistory = useCallback(() => {
+    setView({ kind: 'history' });
+  }, []);
+
   // Render ───────────────────────────────────────────────────
 
   if (!fontsLoaded || !hydrated) return null;
@@ -282,6 +319,21 @@ export default function App() {
         />
       );
     }
+  } else if (view.kind === 'history') {
+    content = (
+      <HistoryScreen history={history} onTap={onTapHistoryRow} />
+    );
+  } else if (view.kind === 'history-detail') {
+    const entry = history?.[view.index];
+    if (entry) {
+      content = (
+        <PastWorkoutScreen workout={entry} onBack={onBackToHistory} />
+      );
+    } else {
+      content = (
+        <HistoryScreen history={history} onTap={onTapHistoryRow} />
+      );
+    }
   } else if (week) {
     content = (
       <WeekScreen
@@ -305,10 +357,20 @@ export default function App() {
     );
   }
 
+  const showTabs =
+    view.kind !== 'workout' && view.kind !== 'import-week';
+  const activeTab: TabKey =
+    view.kind === 'history' || view.kind === 'history-detail'
+      ? 'history'
+      : 'week';
+
   return (
     <SafeAreaProvider>
       <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-        {content}
+        <View style={{ flex: 1 }}>{content}</View>
+        {showTabs ? (
+          <TabBar active={activeTab} onSelect={onTabChange} />
+        ) : null}
         <ConfirmSheet config={confirm} onDismiss={() => setConfirm(null)} />
         <StatusBar style="light" />
       </View>
