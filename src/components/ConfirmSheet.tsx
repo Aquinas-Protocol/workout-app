@@ -1,4 +1,4 @@
-import { Modal, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { theme } from '../theme';
 
 export type ConfirmAction = {
@@ -14,7 +14,9 @@ export type ConfirmConfig = {
 };
 
 // Cross-platform replacement for Alert.alert (react-native-web has no Alert).
-// Driven by a config object held in parent state; null = hidden.
+// Renders as a plain absolutely-positioned overlay rather than RN Modal,
+// because installed iOS PWAs can fail to render Modal portals reliably,
+// leaving the End workout / End week buttons feeling broken.
 export function ConfirmSheet({
   config,
   onDismiss,
@@ -22,12 +24,18 @@ export function ConfirmSheet({
   config: ConfirmConfig | null;
   onDismiss: () => void;
 }) {
+  if (!config) return null;
   return (
-    <Modal
-      visible={!!config}
-      transparent
-      animationType="fade"
-      onRequestClose={onDismiss}
+    <View
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000,
+        elevation: 1000,
+      }}
     >
       <Pressable
         onPress={onDismiss}
@@ -121,6 +129,6 @@ export function ConfirmSheet({
           </View>
         </Pressable>
       </Pressable>
-    </Modal>
+    </View>
   );
 }

@@ -183,7 +183,14 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
             alignItems: 'center',
           }}
         >
-          <Pressable hitSlop={8} onPress={onBack}>
+          <Pressable
+            hitSlop={12}
+            onPress={onBack}
+            style={({ pressed }) => ({
+              paddingVertical: 6,
+              opacity: pressed ? 0.5 : 1,
+            })}
+          >
             <Text
               style={{
                 fontFamily: theme.fonts.mono700,
@@ -195,7 +202,15 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
               ← WEEK
             </Text>
           </Pressable>
-          <Pressable hitSlop={8} onPress={onEnd} style={{ marginLeft: 14 }}>
+          <Pressable
+            hitSlop={12}
+            onPress={onEnd}
+            style={({ pressed }) => ({
+              marginLeft: 14,
+              paddingVertical: 6,
+              opacity: pressed ? 0.5 : 1,
+            })}
+          >
             <Text
               style={{
                 fontFamily: theme.fonts.mono700,

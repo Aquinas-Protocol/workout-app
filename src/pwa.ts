@@ -45,10 +45,18 @@ export function initPwa(): void {
   }
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    const register = () => {
       navigator.serviceWorker
         .register(`${BASE}/sw.js`, { scope: `${BASE}/` })
         .catch(() => {});
-    });
+    };
+    // initPwa runs in a useEffect after React mounts, so the window 'load'
+    // event has typically already fired by now and a 'load' listener would
+    // never run. Register immediately if the document is already loaded.
+    if (document.readyState === 'complete') {
+      register();
+    } else {
+      window.addEventListener('load', register, { once: true });
+    }
   }
 }

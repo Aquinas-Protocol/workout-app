@@ -32,7 +32,14 @@ export function WeekScreen({ week, onLaunchWorkout, onEndWeek }: Props) {
           justifyContent: 'space-between',
         }}
       >
-        <Pressable hitSlop={8} onPress={onEndWeek}>
+        <Pressable
+          hitSlop={12}
+          onPress={onEndWeek}
+          style={({ pressed }) => ({
+            paddingVertical: 6,
+            opacity: pressed ? 0.5 : 1,
+          })}
+        >
           <Text
             style={{
               fontFamily: theme.fonts.mono700,
