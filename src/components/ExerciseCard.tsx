@@ -21,6 +21,9 @@ type Props = {
   onSkip: () => void;
   onPair: () => void;
   onMenu: () => void;
+  // When set, the workout is complete — render the primary action as
+  // FINISH WORKOUT and route presses here instead of onLog.
+  onFinish?: () => void;
 };
 
 export function ExerciseCard({
@@ -38,6 +41,7 @@ export function ExerciseCard({
   onSkip,
   onPair,
   onMenu,
+  onFinish,
 }: Props) {
   const done = exerciseDoneCount(ex);
   const isComplete = done >= ex.targetSets;
@@ -419,7 +423,7 @@ export function ExerciseCard({
               </Text>
             </Pressable>
             <Pressable
-              onPress={onLog}
+              onPress={onFinish ?? onLog}
               style={({ pressed }) => ({
                 flex: 1,
                 height: 44,
@@ -440,7 +444,7 @@ export function ExerciseCard({
                   letterSpacing: -0.2,
                 }}
               >
-                LOG SET{' '}
+                {onFinish ? 'FINISH WORKOUT' : 'LOG SET'}{' '}
                 <Text style={{ opacity: 0.6 }}>›</Text>
               </Text>
             </Pressable>
