@@ -44,7 +44,14 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
   const [pairing, setPairing] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   // Temporary diagnostic for the "LOG SET does nothing" report.
-  const [diag, setDiag] = useState({ taps: 0, lastApply: 'none' });
+  const [diag, setDiag] = useState({
+    taps: 0,
+    lastApply: 'none',
+    exName: '-',
+    prev: '-',
+    after: '-',
+    focusAfter: '-',
+  });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -112,15 +119,17 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
   const onLog = useCallback(() => {
     setDiag(d => ({ ...d, taps: d.taps + 1, lastApply: 'tapped' }));
     setSession(s => {
+      const prevEx = findExercise(s.workout, s.focus.exId);
+      const prevSlot = prevEx.sets[s.focus.setIdx];
       const next = applyLog(s, draft);
       const loggedEx = findExercise(next.workout, s.focus.exId);
       const loggedSlot = loggedEx.sets[s.focus.setIdx];
-      const sameRef = next === s;
       setDiag(d => ({
         ...d,
-        lastApply: sameRef
-          ? 'same-ref'
-          : `wrote r=${loggedSlot?.reps} w=${loggedSlot?.weight}`,
+        exName: prevEx.name.slice(0, 8),
+        prev: `r=${prevSlot?.reps ?? 'null'} skp=${prevSlot?.skipped ? 'Y' : 'N'}`,
+        after: `r=${loggedSlot?.reps ?? 'null'} w=${loggedSlot?.weight ?? 'null'}`,
+        focusAfter: `${next.focus.exId}:${next.focus.setIdx}`,
       }));
       if (loggedSlot?.pr) {
         Haptics.notificationAsync(
@@ -412,11 +421,14 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
             fontSize: 10,
             color: theme.colors.textMuted,
             letterSpacing: 0.2,
+            lineHeight: 14,
           }}
         >
-          tap:{diag.taps} done:{doneSets}/{targetSets} f:{session.focus.exId}:
-          {session.focus.setIdx} d:{draft.reps}×{draft.bw ? 'BW' : draft.weight}{' '}
-          last:{diag.lastApply}
+          tap:{diag.taps} done:{doneSets}/{targetSets} ex:{diag.exName} f:
+          {session.focus.exId}:{session.focus.setIdx} d:{draft.reps}×
+          {draft.bw ? 'BW' : draft.weight}
+          {'\n'}prev[{diag.prev}] after[{diag.after}] focusAfter:
+          {diag.focusAfter}
         </Text>
       </View>
 
