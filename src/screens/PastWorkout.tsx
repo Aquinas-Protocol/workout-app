@@ -59,7 +59,7 @@ export function PastWorkoutScreen({ workout, onBack }: Props) {
 
   return (
     <SafeAreaView
-      edges={['top', 'left', 'right']}
+      edges={['top', 'left', 'right', 'bottom']}
       style={{ flex: 1, backgroundColor: theme.colors.bg }}
     >
       {/* top nav */}

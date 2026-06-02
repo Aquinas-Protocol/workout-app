@@ -165,7 +165,7 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
 
   return (
     <SafeAreaView
-      edges={['top', 'left', 'right']}
+      edges={['top', 'left', 'right', 'bottom']}
       style={{ flex: 1, backgroundColor: theme.colors.bg }}
     >
       {/* top bar */}
@@ -382,6 +382,50 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
           </View>
         ) : null}
       </View>
+
+      {/* workout complete banner */}
+      {doneSets >= targetSets && targetSets > 0 ? (
+        <View
+          style={{
+            marginHorizontal: theme.space.edgeSide,
+            marginTop: 10,
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            backgroundColor: theme.colors.accent,
+            borderRadius: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: theme.fonts.mono700,
+              fontSize: 10,
+              color: theme.colors.bg,
+              letterSpacing: 1.8,
+            }}
+          >
+            ✓ WORKOUT COMPLETE
+          </Text>
+          <Pressable
+            onPress={onEnd}
+            hitSlop={6}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text
+              style={{
+                fontFamily: theme.fonts.mono700,
+                fontSize: 10,
+                color: theme.colors.bg,
+                letterSpacing: 1.2,
+              }}
+            >
+              TAP TO SAVE ›
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* exercise list */}
       <ScrollView
