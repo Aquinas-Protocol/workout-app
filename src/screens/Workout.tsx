@@ -43,6 +43,8 @@ function fmtElapsed(ms: number): string {
 export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
   const [pairing, setPairing] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  // Temporary diagnostic for the "LOG SET does nothing" report.
+  const [diag, setDiag] = useState({ taps: 0, lastApply: 'none' });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -108,10 +110,18 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
   }, [progress, progressWidth]);
 
   const onLog = useCallback(() => {
+    setDiag(d => ({ ...d, taps: d.taps + 1, lastApply: 'tapped' }));
     setSession(s => {
       const next = applyLog(s, draft);
       const loggedEx = findExercise(next.workout, s.focus.exId);
       const loggedSlot = loggedEx.sets[s.focus.setIdx];
+      const sameRef = next === s;
+      setDiag(d => ({
+        ...d,
+        lastApply: sameRef
+          ? 'same-ref'
+          : `wrote r=${loggedSlot?.reps} w=${loggedSlot?.weight}`,
+      }));
       if (loggedSlot?.pr) {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
@@ -381,6 +391,33 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
             </Pressable>
           </View>
         ) : null}
+      </View>
+
+      {/* TEMPORARY diagnostic — remove once "LOG SET does nothing" is solved */}
+      <View
+        style={{
+          marginHorizontal: theme.space.edgeSide,
+          marginTop: 6,
+          paddingVertical: 6,
+          paddingHorizontal: 10,
+          borderRadius: 8,
+          backgroundColor: theme.colors.surface,
+          borderWidth: 1,
+          borderColor: theme.colors.line,
+        }}
+      >
+        <Text
+          style={{
+            fontFamily: theme.fonts.mono400,
+            fontSize: 10,
+            color: theme.colors.textMuted,
+            letterSpacing: 0.2,
+          }}
+        >
+          tap:{diag.taps} done:{doneSets}/{targetSets} f:{session.focus.exId}:
+          {session.focus.setIdx} d:{draft.reps}×{draft.bw ? 'BW' : draft.weight}{' '}
+          last:{diag.lastApply}
+        </Text>
       </View>
 
       {/* workout complete banner */}
