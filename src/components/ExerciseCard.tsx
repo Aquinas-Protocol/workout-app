@@ -46,6 +46,9 @@ export function ExerciseCard({
   const done = exerciseDoneCount(ex);
   const isComplete = done >= ex.targetSets;
   const focusedSet = ex.sets[focusSetIdx];
+  const targetLabel = ex.repScheme
+    ? `${ex.targetSets}×${ex.repScheme.join('·')}`
+    : `${ex.targetSets}×${ex.targetReps}`;
 
   const borderColor = isPairTarget
     ? theme.colors.accent
@@ -114,7 +117,7 @@ export function ExerciseCard({
                 letterSpacing: 1.8,
               }}
             >
-              {ex.targetSets}×{ex.targetReps}
+              {targetLabel}
             </Text>
             {ex.modifier ? (
               <Text
@@ -271,6 +274,7 @@ export function ExerciseCard({
             <SetPill
               set={s}
               idx={i}
+              target={ex.repScheme ? ex.repScheme[i] : undefined}
               active={focused && i === focusSetIdx}
               onPress={() => onFocusSet(i)}
             />
@@ -298,7 +302,7 @@ export function ExerciseCard({
             <HeroStepper
               label="REPS"
               value={draft.reps}
-              unit={`target ${ex.targetReps}`}
+              unit={`target ${ex.repScheme?.[focusSetIdx] ?? ex.targetReps}`}
               onMinus={() =>
                 setDraft(d => ({ ...d, reps: Math.max(0, d.reps - 1) }))
               }

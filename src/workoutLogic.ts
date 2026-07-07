@@ -113,7 +113,7 @@ export function suggestDraft(ex: Exercise, setIdx: number): Draft {
     .reverse()
     .find(s => s.reps != null);
   return {
-    reps: lastDone?.reps ?? ex.targetReps,
+    reps: lastDone?.reps ?? ex.repScheme?.[setIdx] ?? ex.targetReps,
     weight: lastDone?.weight ?? 0,
     bw: !!slot.bw,
   };
@@ -189,7 +189,8 @@ export function applyLog(
     skipped: false,
   };
 
-  if (wasEmpty && !draft.bw && draft.reps >= ex.targetReps) {
+  const setTarget = ex.repScheme?.[focus.setIdx] ?? ex.targetReps;
+  if (wasEmpty && !draft.bw && draft.reps >= setTarget) {
     const bestPrev = Math.max(
       0,
       ...ex.sets

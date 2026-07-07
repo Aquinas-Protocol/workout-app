@@ -17,6 +17,9 @@ export type Exercise = {
   modifier?: string;
   targetSets: number;
   targetReps: number;
+  // Per-set target reps for stacked/descending schemes, e.g. [5,4,3,2,1];
+  // index-aligned with sets. Absent for uniform schemes.
+  repScheme?: number[];
   lastTime?: string;
   sets: WorkoutSet[];
 };

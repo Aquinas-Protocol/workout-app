@@ -1,4 +1,4 @@
-import type { ActiveSession } from './types';
+import type { ActiveSession, Exercise } from './types';
 import { sampleActiveWorkout } from './data/sampleWorkout';
 import {
   applyLog,
@@ -6,6 +6,7 @@ import {
   focusExercise,
   initialFocus,
   nextFocus,
+  suggestDraft,
   summarizeWorkout,
   togglePair,
   totalDoneSets,
@@ -135,5 +136,25 @@ describe('workoutLogic', () => {
     expect(
       nextFocus(s.workout, null, 'lat', s.workout.exercises[3].sets.length - 1),
     ).toBeNull();
+  });
+});
+
+describe('suggestDraft with a descending rep scheme', () => {
+  const schemeExercise: Exercise = {
+    id: 'deadlift',
+    name: 'DEADLIFT',
+    targetSets: 5,
+    targetReps: 5,
+    repScheme: [5, 4, 3, 2, 1],
+    sets: Array.from({ length: 5 }, () => ({
+      reps: null,
+      weight: null,
+      done: false,
+    })),
+  };
+
+  test('empty set suggests its own per-set target', () => {
+    expect(suggestDraft(schemeExercise, 0).reps).toBe(5);
+    expect(suggestDraft(schemeExercise, 3).reps).toBe(2);
   });
 });

@@ -126,3 +126,81 @@ PULL-UPS 2x6
     expect(r.workout.exercises[1].id).toBe('pull-ups-2');
   });
 });
+
+describe('parseAppleNotes — descending/stacked rep schemes', () => {
+  test('descending header parses into a per-set repScheme', () => {
+    const r = parseAppleNotes('DEADLIFT 5 SETS X 5, 4, 3, 2, 1 REP');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ex = r.workout.exercises[0];
+    expect(ex.name).toBe('DEADLIFT');
+    expect(ex.targetSets).toBe(5);
+    expect(ex.repScheme).toEqual([5, 4, 3, 2, 1]);
+    expect(ex.targetReps).toBe(5);
+    expect(ex.sets).toHaveLength(5);
+    expect(ex.sets.every(s => s.reps === null)).toBe(true);
+  });
+
+  test('the full bug-report paste parses all four exercises', () => {
+    const text = `
+DEADLIFT 5 SETS X 5, 4, 3, 2, 1 REP
+PULL UP (WEIGHTED) 5 SETS X 5, 4, 3, 2, 1 REP
+ROMANIAN DEADLIFT 5 SETS X 5, 4, 3, 2, 1 REP
+BENT OVER ROW 5 SETS X 5, 4, 3, 2, 1 REP
+`.trim();
+    const r = parseAppleNotes(text, 'Day 1 - Pull');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises.map(e => e.name)).toEqual([
+      'DEADLIFT',
+      'PULL UP',
+      'ROMANIAN DEADLIFT',
+      'BENT OVER ROW',
+    ]);
+    expect(r.workout.exercises[1].modifier).toBe('WEIGHTED');
+    expect(
+      r.workout.exercises.every(
+        e => JSON.stringify(e.repScheme) === JSON.stringify([5, 4, 3, 2, 1]),
+      ),
+    ).toBe(true);
+  });
+
+  test('single-number header has no repScheme (regression)', () => {
+    const r = parseAppleNotes('BENCH PRESS 4x10');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ex = r.workout.exercises[0];
+    expect(ex.repScheme).toBeUndefined();
+    expect(ex.targetSets).toBe(4);
+    expect(ex.targetReps).toBe(10);
+  });
+
+  test('slash-separated scheme parses', () => {
+    const r = parseAppleNotes('PULL UP 5 SETS X 5/4/3/2/1');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises[0].repScheme).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  test('mismatched stated sets vs rep list warns and trusts the list', () => {
+    const r = parseAppleNotes('DEADLIFT 3 SETS X 5, 4, 3, 2, 1');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises[0].targetSets).toBe(5);
+    expect(r.workout.exercises[0].sets).toHaveLength(5);
+    expect(r.warnings.some(w => /rep targets/.test(w))).toBe(true);
+  });
+
+  test('logged set under a scheme is captured and repScheme survives', () => {
+    const text = `
+DEADLIFT 5 SETS X 5, 4, 3, 2, 1 REP
+5 @ 115
+`.trim();
+    const r = parseAppleNotes(text);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ex = r.workout.exercises[0];
+    expect(ex.repScheme).toEqual([5, 4, 3, 2, 1]);
+    expect(ex.sets[0]).toMatchObject({ reps: 5, weight: 115, done: true });
+  });
+});

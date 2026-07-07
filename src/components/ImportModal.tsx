@@ -26,7 +26,9 @@ DUMBBELL SEATED PRESS 4x10
 WEIGHTED CHEST DIPS 4x10
 5 BW
 
-LATERAL RAISE 4x10`;
+LATERAL RAISE 4x10
+
+DEADLIFT 5 SETS X 5, 4, 3, 2, 1`;
 
 export function ImportModal({ visible, onClose, onImport }: Props) {
   const [title, setTitle] = useState('');

@@ -7,9 +7,11 @@ type Props = {
   idx: number;
   active: boolean;
   onPress: () => void;
+  // Per-set target reps for stacked schemes; shown faintly on an empty pill.
+  target?: number;
 };
 
-export function SetPill({ set, idx, active, onPress }: Props) {
+export function SetPill({ set, idx, active, onPress, target }: Props) {
   const done = set.reps != null;
   const skipped = !!set.skipped;
 
@@ -162,7 +164,7 @@ export function SetPill({ set, idx, active, onPress }: Props) {
           color: active ? theme.colors.accent : theme.colors.textGhost,
         }}
       >
-        —
+        {target != null ? target : '—'}
       </Text>
     </Pressable>
   );

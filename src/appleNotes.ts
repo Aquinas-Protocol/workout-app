@@ -16,13 +16,20 @@
 import type { Exercise, Workout, WorkoutSet } from './types';
 
 const HEADER_RE =
-  /^(.+?)(?:\s*\(([^)]+)\))?\s+(\d+)\s*(?:SETS?\s*)?[X×x]\s*(\d+)(?:\s*REPS?)?$/i;
+  /^(.+?)(?:\s*\(([^)]+)\))?\s+(\d+)\s*(?:SETS?\s*)?[X×x]\s*(\d+(?:\s*[,/]\s*\d+)*)(?:\s*REPS?)?$/i;
 const SET_RE = /^(\d+)\s*@\s*(BW|\d+)\s*(ea)?$/i;
 const SET_BW_SHORT_RE = /^(\d+)\s+BW$/i;
 
 export type ParseResult =
   | { ok: true; workout: Workout; warnings: string[] }
   | { ok: false; errors: string[]; warnings: string[] };
+
+function parseRepList(s: string): number[] {
+  return s
+    .split(/[,/]/)
+    .map(x => parseInt(x.trim(), 10))
+    .filter(n => !Number.isNaN(n));
+}
 
 function slugify(name: string, existing: Set<string>): string {
   const base =
@@ -103,12 +110,21 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
       const cleanName = name.trim().toUpperCase();
       const id = slugify(cleanName, ids);
       ids.add(id);
+      const repList = parseRepList(reps);
+      const statedSets = parseInt(sets, 10);
+      const isScheme = repList.length > 1;
+      if (isScheme && repList.length !== statedSets) {
+        warnings.push(
+          `${cleanName}: header says ${statedSets} sets but lists ${repList.length} rep targets; using ${repList.length}.`,
+        );
+      }
       current = {
         id,
         name: cleanName,
         modifier: modifier?.trim().toUpperCase(),
-        targetSets: parseInt(sets, 10),
-        targetReps: parseInt(reps, 10),
+        targetSets: isScheme ? repList.length : statedSets,
+        targetReps: repList[0],
+        ...(isScheme ? { repScheme: repList } : {}),
         sets: [],
       };
       defaults = {};
