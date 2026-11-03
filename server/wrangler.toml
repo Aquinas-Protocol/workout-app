@@ -1,0 +1,20 @@
+name = "workout-sync"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[observability]
+enabled = true
+
+[vars]
+# Browser origins allowed to call the API (comma-separated). The installed
+# PWA lives on GitHub Pages; localhost is the Expo web dev server.
+ALLOWED_ORIGINS = "https://aquinas-protocol.github.io,http://localhost:19006,http://localhost:8081"
+
+# SYNC_TOKEN is a secret: `npx wrangler secret put SYNC_TOKEN`.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "workout-sync"
+# Placeholder until `npx wrangler d1 create workout-sync` prints the real id.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

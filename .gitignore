@@ -40,3 +40,6 @@ yarn-error.*
 /ios
 /android
 _webtest/
+
+# Cloudflare Worker (server/)
+.wrangler/

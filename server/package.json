@@ -1,0 +1,16 @@
+{
+  "name": "workout-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloud copy of the Stadium workout app's history (Cloudflare Worker + D1).",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260612.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.100.0"
+  }
+}

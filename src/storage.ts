@@ -9,6 +9,8 @@ const HISTORY_KEY = '@workout/history-v1';
 const HISTORY_PREMIGRATION_KEY = '@workout/history-v1-premigration';
 const LAST_TEMPLATES_KEY = '@workout/last-templates-v1';
 const ALIASES_KEY = '@workout/exercise-aliases-v1';
+const SYNC_CONFIG_KEY = '@workout/sync-config-v1';
+const SYNC_OUTBOX_KEY = '@workout/sync-outbox-v1';
 // Legacy key — single-workout session, pre-Week model. Migrated on first load.
 const LEGACY_SESSION_KEY = '@workout/active-session-v1';
 
@@ -96,6 +98,11 @@ export async function loadHistory(): Promise<Workout[]> {
   }
 }
 
+/** Replace history wholesale (cloud restore only). */
+export async function saveHistory(h: Workout[]): Promise<void> {
+  await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+}
+
 export async function loadAliases(): Promise<Aliases> {
   try {
     const raw = await AsyncStorage.getItem(ALIASES_KEY);
@@ -124,3 +131,31 @@ export async function loadLastTemplates(): Promise<Workout[] | null> {
   }
 }
 
+export async function loadSyncToken(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(SYNC_CONFIG_KEY);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { token?: string }).token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSyncToken(token: string | null): Promise<void> {
+  if (token) await AsyncStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ token }));
+  else await AsyncStorage.removeItem(SYNC_CONFIG_KEY);
+}
+
+export async function loadOutbox(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(SYNC_OUTBOX_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as string[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveOutbox(outbox: string[]): Promise<void> {
+  await AsyncStorage.setItem(SYNC_OUTBOX_KEY, JSON.stringify(outbox));
+}

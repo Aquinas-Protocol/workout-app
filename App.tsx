@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -27,9 +27,14 @@ import {
   loadAliases,
   loadHistory,
   loadLastTemplates,
+  loadOutbox,
+  loadSyncToken,
   loadWeek,
   saveAliases,
+  saveHistory,
   saveLastTemplates,
+  saveOutbox,
+  saveSyncToken,
   saveWeek,
 } from './src/storage';
 import {
@@ -50,6 +55,16 @@ import {
   type ExerciseSummary,
 } from './src/records';
 import { sortExercises } from './src/historyLogic';
+import {
+  ALIASES_DOC,
+  enqueue,
+  mergeRemote,
+  ping,
+  pullDocs,
+  pushOutbox,
+  workoutDoc,
+  type SyncError,
+} from './src/syncLogic';
 import { initPwa } from './src/pwa';
 import { EmptyWeekState } from './src/components/EmptyWeekState';
 import {
@@ -67,6 +82,7 @@ import {
 } from './src/screens/History';
 import { PastWorkoutScreen } from './src/screens/PastWorkout';
 import { ExerciseDetailScreen } from './src/screens/ExerciseDetail';
+import { SyncScreen } from './src/screens/Sync';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -79,6 +95,7 @@ type AppView =
       initialTemplates?: Workout[];
     }
   | { kind: 'history' }
+  | { kind: 'sync' }
   // `back` is the view that opened the detail screen.
   | { kind: 'history-detail'; historyId: string; back: AppView }
   | { kind: 'exercise-detail'; exKey: string; back: AppView };
@@ -108,6 +125,13 @@ export default function App() {
   const [view, setView] = useState<AppView>({ kind: 'week' });
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
   const [historyUi, setHistoryUi] = useState<HistoryUi>(INITIAL_HISTORY_UI);
+  // Cloud sync: token (null = off) and the queue of doc keys to upload.
+  const [syncToken, setSyncToken] = useState<string | null>(null);
+  const [outbox, setOutbox] = useState<string[]>([]);
+  const [syncError, setSyncError] = useState<SyncError | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncTick, setSyncTick] = useState(0);
+  const flushing = useRef(false);
 
   // PRs, records and per-exercise sessions, replayed from all history.
   const index = useMemo(
@@ -128,12 +152,16 @@ export default function App() {
       loadLastTemplates(),
       loadHistory(),
       loadAliases(),
-    ]).then(([w, t, h, a]) => {
+      loadSyncToken(),
+      loadOutbox(),
+    ]).then(([w, t, h, a, token, o]) => {
       if (cancelled) return;
       setWeek(w);
       setLastTemplates(t);
       setHistory(h);
       setAliases(a);
+      setSyncToken(token);
+      setOutbox(o);
       setHydrated(true);
     });
     return () => {
@@ -151,6 +179,54 @@ export default function App() {
     if (week) saveWeek(week).catch(() => {});
     else clearWeek().catch(() => {});
   }, [week, hydrated]);
+
+  // Persist the sync outbox, same hydration gate as the week.
+  useEffect(() => {
+    if (!hydrated) return;
+    saveOutbox(outbox).catch(() => {});
+  }, [outbox, hydrated]);
+
+  // Upload whatever is queued. A failure leaves the outbox as-is; the next
+  // trigger (save, foreground, back online) retries.
+  const flush = useCallback(async (): Promise<SyncError | null> => {
+    if (!syncToken || !history || outbox.length === 0 || flushing.current) {
+      return null;
+    }
+    flushing.current = true;
+    const { sent, error } = await pushOutbox(
+      syncToken,
+      outbox,
+      history,
+      aliases,
+      fetch,
+    );
+    flushing.current = false;
+    if (sent.length > 0) setOutbox(o => o.filter(k => !sent.includes(k)));
+    setSyncError(error ?? null);
+    return error ?? null;
+  }, [syncToken, history, outbox, aliases]);
+
+  useEffect(() => {
+    if (hydrated) flush();
+  }, [hydrated, flush, syncTick]);
+
+  // Retry when the app returns to the foreground or the network comes back.
+  useEffect(() => {
+    const bump = () => setSyncTick(t => t + 1);
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active') bump();
+    });
+    const win =
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+        ? window
+        : null;
+    win?.addEventListener('online', bump);
+    return () => {
+      sub.remove();
+      win?.removeEventListener('online', bump);
+    };
+  }, []);
 
   // Hide splash when fonts + hydration are both ready.
   useEffect(() => {
@@ -254,6 +330,10 @@ export default function App() {
             if (summary) {
               appendHistory(summary).catch(() => {});
               setHistory(h => (h ? [summary, ...h] : [summary]));
+              if (syncToken && summary.id) {
+                const key = workoutDoc(summary.id);
+                setOutbox(o => enqueue(o, [key]));
+              }
             }
             setWeek(next);
             setView({ kind: 'week' });
@@ -274,7 +354,7 @@ export default function App() {
         { label: 'Cancel', style: 'cancel' },
       ],
     });
-  }, [view, week]);
+  }, [view, week, syncToken]);
 
   const onEndWeek = useCallback(() => {
     if (!week) return;
@@ -353,13 +433,14 @@ export default function App() {
               const next = mergeAlias(aliases, from, into);
               setAliases(next);
               saveAliases(next).catch(() => {});
+              if (syncToken) setOutbox(o => enqueue(o, [ALIASES_DOC]));
             },
           },
           { label: 'Cancel', style: 'cancel' },
         ],
       });
     },
-    [aliases, index.exercises],
+    [aliases, index.exercises, syncToken],
   );
 
   const onUnmerge = useCallback(
@@ -374,14 +455,77 @@ export default function App() {
               const next = unmergeAlias(aliases, key);
               setAliases(next);
               saveAliases(next).catch(() => {});
+              if (syncToken) setOutbox(o => enqueue(o, [ALIASES_DOC]));
             },
           },
           { label: 'Cancel', style: 'cancel' },
         ],
       });
     },
-    [aliases],
+    [aliases, syncToken],
   );
+
+  const onEnableSync = useCallback(
+    async (token: string) => {
+      setSyncBusy(true);
+      const error = await ping(token, fetch);
+      setSyncBusy(false);
+      setSyncError(error);
+      if (error) return;
+      saveSyncToken(token).catch(() => {});
+      setSyncToken(token);
+      // Turning sync on uploads every workout already saved.
+      const ids = (history ?? []).flatMap(w => (w.id ? [w.id] : []));
+      setOutbox(o => enqueue(o, [...ids.map(workoutDoc), ALIASES_DOC]));
+    },
+    [history],
+  );
+
+  const onRestoreSync = useCallback(async () => {
+    if (!syncToken || !history) return;
+    setSyncBusy(true);
+    // Send pending changes first so the pull can't bring back stale ones.
+    const pushError = await flush();
+    const pulled = pushError ? null : await pullDocs(syncToken, fetch);
+    setSyncBusy(false);
+    if (!pulled || 'error' in pulled) {
+      setSyncError(pulled ? pulled.error : pushError);
+      return;
+    }
+    const merged = mergeRemote({ history, aliases }, pulled);
+    setHistory(merged.history);
+    saveHistory(merged.history).catch(() => {});
+    setAliases(merged.aliases);
+    saveAliases(merged.aliases).catch(() => {});
+    setConfirm({
+      title: 'Restore complete',
+      message: merged.added
+        ? `Added ${merged.added} workout${merged.added === 1 ? '' : 's'} from the cloud.`
+        : 'Nothing new: this device already has every workout in the cloud.',
+      actions: [{ label: 'OK' }],
+    });
+  }, [syncToken, history, aliases, flush]);
+
+  const onDisableSync = useCallback(() => {
+    setConfirm({
+      title: 'Turn off sync?',
+      message:
+        'New workouts stop uploading. Everything already in the cloud stays there, and this device keeps its history.',
+      actions: [
+        {
+          label: 'Turn off',
+          style: 'destructive',
+          onPress: () => {
+            saveSyncToken(null).catch(() => {});
+            setSyncToken(null);
+            setOutbox([]);
+            setSyncError(null);
+          },
+        },
+        { label: 'Cancel', style: 'cancel' },
+      ],
+    });
+  }, []);
 
   // Render ───────────────────────────────────────────────────
 
@@ -394,6 +538,8 @@ export default function App() {
       setUi={setHistoryUi}
       onOpenWorkout={openWorkout}
       onOpenExercise={openExercise}
+      sync={{ enabled: !!syncToken, pending: outbox.length, error: syncError }}
+      onOpenSync={() => setView({ kind: 'sync' })}
     />
   );
 
@@ -425,6 +571,20 @@ export default function App() {
     }
   } else if (view.kind === 'history') {
     content = historyScreen;
+  } else if (view.kind === 'sync') {
+    content = (
+      <SyncScreen
+        enabled={!!syncToken}
+        pending={outbox.length}
+        error={syncError}
+        busy={syncBusy}
+        onEnable={onEnableSync}
+        onSyncNow={() => setSyncTick(t => t + 1)}
+        onRestore={onRestoreSync}
+        onDisable={onDisableSync}
+        onBack={() => setView({ kind: 'history' })}
+      />
+    );
   } else if (view.kind === 'history-detail') {
     const entry = index.history.find(w => w.id === view.historyId);
     content = entry ? (
@@ -486,6 +646,7 @@ export default function App() {
     view.kind !== 'workout' && view.kind !== 'import-week';
   const activeTab: TabKey =
     view.kind === 'history' ||
+    view.kind === 'sync' ||
     view.kind === 'history-detail' ||
     view.kind === 'exercise-detail'
       ? 'history'

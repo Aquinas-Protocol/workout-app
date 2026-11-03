@@ -17,6 +17,7 @@ import {
   sortExercises,
   type ExerciseSort,
 } from '../historyLogic';
+import type { SyncError } from '../syncLogic';
 
 export type HistoryTab = 'workouts' | 'exercises' | 'prs';
 
@@ -41,6 +42,8 @@ type Props = {
   setUi: Dispatch<SetStateAction<HistoryUi>>;
   onOpenWorkout: (historyId: string) => void;
   onOpenExercise: (exKey: string) => void;
+  sync: { enabled: boolean; pending: number; error: SyncError | null };
+  onOpenSync: () => void;
 };
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -91,9 +94,18 @@ export function HistoryScreen({
   setUi,
   onOpenWorkout,
   onOpenExercise,
+  sync,
+  onOpenSync,
 }: Props) {
   const isEmpty = index.history.length === 0;
   const exercises = Object.values(index.exercises);
+  const syncPill = !sync.enabled
+    ? { label: 'SYNC OFF', color: theme.colors.textDim }
+    : sync.error === 'auth'
+      ? { label: 'SYNC ERROR', color: theme.colors.danger }
+      : sync.pending > 0
+        ? { label: `SYNC · ${sync.pending}`, color: theme.colors.textMuted }
+        : { label: '✓ SYNCED', color: theme.colors.good };
   return (
     <SafeAreaView
       edges={['top', 'left', 'right']}
@@ -106,17 +118,41 @@ export function HistoryScreen({
           paddingTop: 4,
         }}
       >
-        <Text
+        <View
           style={{
-            fontFamily: theme.fonts.mono700,
-            fontSize: 10,
-            color: theme.colors.textDim,
-            letterSpacing: 2,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             marginBottom: 4,
           }}
         >
-          TRAINING LOG
-        </Text>
+          <Text
+            style={{
+              fontFamily: theme.fonts.mono700,
+              fontSize: 10,
+              color: theme.colors.textDim,
+              letterSpacing: 2,
+            }}
+          >
+            TRAINING LOG
+          </Text>
+          <Pressable
+            hitSlop={10}
+            onPress={onOpenSync}
+            style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+          >
+            <Text
+              style={{
+                fontFamily: theme.fonts.mono700,
+                fontSize: 10,
+                color: syncPill.color,
+                letterSpacing: 1.5,
+              }}
+            >
+              {syncPill.label} ›
+            </Text>
+          </Pressable>
+        </View>
         <Text
           style={{
             fontFamily: theme.fonts.display700,
