@@ -105,6 +105,7 @@ describe('sortExercises', () => {
     key: `${name}|`,
     name,
     sessions: times.map(t => ({ completedAtMs: t, title: 'W', sets: [] })),
+    spellings: [{ name }],
   });
   const list = [sum('ROW', [5]), sum('BENCH', [9, 3, 1]), sum('SQUAT', [7])];
 

@@ -11,10 +11,16 @@ import {
   type ExerciseSummary,
 } from '../records';
 import { matchesQuery } from '../historyLogic';
+import {
+  MUSCLE_GROUPS,
+  type LibraryEntry,
+  type LibraryMeta,
+} from '../library';
 import { SetPill } from '../components/SetPill';
+import { Chip } from '../components/Chip';
 
 type Props = {
-  summary: ExerciseSummary;
+  summary: LibraryEntry;
   records: ExerciseRecords | undefined;
   // Alias keys currently merged into this exercise.
   mergedHere: string[];
@@ -24,6 +30,7 @@ type Props = {
   onOpenWorkout: (historyId: string) => void;
   onMerge: (intoKey: string) => void;
   onUnmerge: (aliasKey: string) => void;
+  onEdit: (patch: Partial<LibraryMeta>) => void;
 };
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -63,9 +70,15 @@ export function ExerciseDetailScreen({
   onOpenWorkout,
   onMerge,
   onUnmerge,
+  onEdit,
 }: Props) {
   const [merging, setMerging] = useState(false);
   const [mergeQuery, setMergeQuery] = useState('');
+  const [notes, setNotes] = useState(summary.notes ?? '');
+  const saveNotes = () => {
+    const next = notes.trim();
+    if (next !== (summary.notes ?? '')) onEdit({ notes: next });
+  };
   const board = repMaxBoard(records);
   const best = headline(records);
   const targets = mergeTargets.filter(t =>
@@ -134,6 +147,20 @@ export function ExerciseDetailScreen({
           >
             {summary.name}
           </Text>
+          <View
+            style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}
+          >
+            {MUSCLE_GROUPS.map(g => (
+              <Chip
+                key={g}
+                label={g}
+                active={summary.group === g}
+                onPress={() => {
+                  if (summary.group !== g) onEdit({ group: g });
+                }}
+              />
+            ))}
+          </View>
         </View>
 
         {/* stats row */}
@@ -143,6 +170,33 @@ export function ExerciseDetailScreen({
           <Stat
             label="LAST"
             value={fmtShortDate(summary.sessions[0]?.completedAtMs)}
+          />
+        </View>
+
+        {/* notes */}
+        <View style={{ marginTop: 18 }}>
+          <SectionLabel>NOTES</SectionLabel>
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            onBlur={saveNotes}
+            placeholder="Cues, grip, seat or pin settings"
+            placeholderTextColor={theme.colors.textGhost}
+            multiline
+            style={{
+              minHeight: 64,
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.line,
+              borderWidth: 1,
+              borderRadius: theme.radii.cardPast,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              fontFamily: theme.fonts.sans400,
+              fontSize: 14,
+              lineHeight: 20,
+              color: theme.colors.text,
+              textAlignVertical: 'top',
+            }}
           />
         </View>
 
@@ -242,6 +296,32 @@ export function ExerciseDetailScreen({
             </Pressable>
           ))}
         </View>
+
+        {/* display name: any spelling logged under this exercise */}
+        {summary.spellings.length > 1 ? (
+          <View style={{ marginTop: 10 }}>
+            <SectionLabel>DISPLAY NAME</SectionLabel>
+            <View
+              style={{ flexDirection: 'row', flexWrap: 'wrap', marginLeft: 4 }}
+            >
+              {summary.spellings.map(sp => {
+                const label = sp.modifier ? `${sp.name} (${sp.modifier})` : sp.name;
+                const active =
+                  sp.name === summary.name && sp.modifier === summary.modifier;
+                return (
+                  <Chip
+                    key={label}
+                    label={label}
+                    active={active}
+                    onPress={() => {
+                      if (!active) onEdit({ spelling: sp });
+                    }}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         {/* merged here */}
         {mergedHere.length > 0 ? (

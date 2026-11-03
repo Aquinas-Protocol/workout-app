@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ActiveSession, Week, Workout } from './types';
 import type { Aliases } from './records';
+import { EMPTY_LIBRARY, type LibraryEdits } from './library';
 import { withHistoryIds } from './historyLogic';
 
 const WEEK_KEY = '@workout/active-week-v1';
@@ -9,6 +10,7 @@ const HISTORY_KEY = '@workout/history-v1';
 const HISTORY_PREMIGRATION_KEY = '@workout/history-v1-premigration';
 const LAST_TEMPLATES_KEY = '@workout/last-templates-v1';
 const ALIASES_KEY = '@workout/exercise-aliases-v1';
+const LIBRARY_KEY = '@workout/exercise-library-v1';
 const SYNC_CONFIG_KEY = '@workout/sync-config-v1';
 const SYNC_OUTBOX_KEY = '@workout/sync-outbox-v1';
 // Legacy key — single-workout session, pre-Week model. Migrated on first load.
@@ -115,6 +117,20 @@ export async function loadAliases(): Promise<Aliases> {
 
 export async function saveAliases(a: Aliases): Promise<void> {
   await AsyncStorage.setItem(ALIASES_KEY, JSON.stringify(a));
+}
+
+export async function loadLibrary(): Promise<LibraryEdits> {
+  try {
+    const raw = await AsyncStorage.getItem(LIBRARY_KEY);
+    if (!raw) return EMPTY_LIBRARY;
+    return { ...EMPTY_LIBRARY, ...(JSON.parse(raw) as LibraryEdits) };
+  } catch {
+    return EMPTY_LIBRARY;
+  }
+}
+
+export async function saveLibrary(l: LibraryEdits): Promise<void> {
+  await AsyncStorage.setItem(LIBRARY_KEY, JSON.stringify(l));
 }
 
 export async function saveLastTemplates(templates: Workout[]): Promise<void> {

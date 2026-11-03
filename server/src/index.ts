@@ -1,7 +1,7 @@
 // workout-sync: the cloud copy of the Stadium workout app's history.
 // A tiny authenticated document store over D1. Each saved workout (and the
-// exercise alias map) is one JSON doc keyed by (kind, id); on conflict the
-// newer updatedAt wins.
+// exercise alias map and library edits) is one JSON doc keyed by (kind, id);
+// on conflict the newer updatedAt wins.
 //
 //   GET /v1/ping  → { ok: true }
 //   GET /v1/docs  → { docs: [{ kind, id, body, updatedAt }] }
@@ -19,7 +19,7 @@ interface Env {
 
 type Doc = { kind: string; id: string; body: string; updatedAt: number };
 
-const KINDS = new Set(['workout', 'aliases']);
+const KINDS = new Set(['workout', 'aliases', 'library']);
 const MAX_DOCS = 100;
 const MAX_BODY_CHARS = 500_000;
 

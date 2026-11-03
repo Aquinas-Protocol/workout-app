@@ -27,6 +27,8 @@ type Props = {
   // Derived from history (src/records.ts); shown under LOG SET when focused.
   lastTime?: string;
   record?: string;
+  // The exercise's library notes (src/library.ts).
+  notes?: string;
 };
 
 export function ExerciseCard({
@@ -47,6 +49,7 @@ export function ExerciseCard({
   onFinish,
   lastTime,
   record,
+  notes,
 }: Props) {
   const done = exerciseDoneCount(ex);
   const isComplete = done >= ex.targetSets;
@@ -489,6 +492,23 @@ export function ExerciseCard({
             >
               record ·{' '}
               <Text style={{ color: theme.colors.pr }}>{record}</Text>
+            </Text>
+          ) : null}
+          {notes ? (
+            <Text
+              style={{
+                // the line above already ends with a 4px margin
+                marginTop: lastTime || record ? 0 : 12,
+                marginBottom: 4,
+                fontFamily: theme.fonts.mono400,
+                fontSize: 10,
+                color: theme.colors.textDim,
+                letterSpacing: 0.5,
+                textAlign: 'center',
+              }}
+            >
+              notes ·{' '}
+              <Text style={{ color: theme.colors.textMuted }}>{notes}</Text>
             </Text>
           ) : null}
         </View>

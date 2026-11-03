@@ -35,8 +35,8 @@ import {
   recordToBeat,
   resolveKey,
   type Aliases,
-  type HistoryIndex,
 } from '../records';
+import type { LibraryIndex } from '../library';
 import { ExerciseCard } from '../components/ExerciseCard';
 import type {
   ConfirmAction,
@@ -48,7 +48,7 @@ type Props = {
   setSession: Dispatch<SetStateAction<ActiveSession>>;
   onBack: () => void;
   onEnd: () => void;
-  index: HistoryIndex;
+  index: LibraryIndex;
   aliases: Aliases;
   showSheet: (config: ConfirmConfig) => void;
 };
@@ -148,6 +148,16 @@ export function WorkoutScreen({
       const key = resolveKey(exerciseKey(ex.name, ex.modifier), aliases);
       const last = index.exercises[key]?.sessions[0];
       if (last) out[ex.id] = fmtLastTime(last.sets, last.completedAtMs, nowMs);
+    }
+    return out;
+  }, [session.workout.exercises, index.exercises, aliases]);
+
+  const notes = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const ex of session.workout.exercises) {
+      const key = resolveKey(exerciseKey(ex.name, ex.modifier), aliases);
+      const n = index.exercises[key]?.notes;
+      if (n) out[ex.id] = n;
     }
     return out;
   }, [session.workout.exercises, index.exercises, aliases]);
@@ -547,6 +557,7 @@ export function WorkoutScreen({
                 }
                 lastTime={lastTimes[ex.id]}
                 record={focused ? record : undefined}
+                notes={notes[ex.id]}
               />
             </View>
           );

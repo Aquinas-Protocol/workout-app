@@ -167,6 +167,27 @@ describe('indexHistory (rep-max PRs)', () => {
     expect(row.sessions[0].sets.map(s => s.weight)).toEqual([140, 145]);
     expect(row.sessions[1].completedAtMs).toBe(DAY);
   });
+
+  test('spellings list every logged spelling once, merged ones too, newest first', () => {
+    const w1 = wk(DAY, [ex('TRAP BAR DL', [set(5, 225)])]);
+    const w2 = wk(2 * DAY, [ex('BACK SQUATS', [set(5, 225)])]);
+    const w3 = wk(3 * DAY, [
+      ex('BACK SQUAT', [set(5, 230)]),
+      ex('TRAP BAR DEADLIFT', [set(5, 235)]),
+    ]);
+    const w4 = wk(4 * DAY, [ex('BACK SQUAT', [set(5, 235)])]);
+    const { exercises } = indexHistory([w1, w2, w3, w4], {
+      [exerciseKey('TRAP BAR DL')]: exerciseKey('TRAP BAR DEADLIFT'),
+    });
+    expect(exercises[exerciseKey('BACK SQUAT')].spellings).toEqual([
+      { name: 'BACK SQUAT' },
+      { name: 'BACK SQUATS' },
+    ]);
+    expect(exercises[exerciseKey('TRAP BAR DEADLIFT')].spellings).toEqual([
+      { name: 'TRAP BAR DEADLIFT' },
+      { name: 'TRAP BAR DL' },
+    ]);
+  });
 });
 
 describe('annotateSession (live workout)', () => {

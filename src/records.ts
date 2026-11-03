@@ -39,12 +39,16 @@ export type ExerciseSession = {
   sets: WorkoutSet[];
 };
 
+export type Spelling = { name: string; modifier?: string };
+
 export type ExerciseSummary = {
   key: string;
   name: string;
   modifier?: string;
   // Newest first.
   sessions: ExerciseSession[];
+  // Every spelling logged under this exercise (merged ones too), newest first.
+  spellings: Spelling[];
 };
 
 export type HistoryIndex = {
@@ -58,7 +62,7 @@ export type HistoryIndex = {
 
 type At = { workoutId?: string; completedAtMs?: number };
 
-function normWords(s: string): string {
+export function normWords(s: string): string {
   const words = s
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
@@ -236,8 +240,23 @@ export function indexHistory(
       const key = resolveKey(raw, aliases);
       let sum = exercises[key];
       if (!sum) {
-        sum = { key, name: ex.name, modifier: ex.modifier, sessions: [] };
+        sum = {
+          key,
+          name: ex.name,
+          modifier: ex.modifier,
+          sessions: [],
+          spellings: [],
+        };
         exercises[key] = sum;
+      }
+      if (
+        !sum.spellings.some(
+          sp => sp.name === ex.name && sp.modifier === ex.modifier,
+        )
+      ) {
+        sum.spellings.push(
+          ex.modifier ? { name: ex.name, modifier: ex.modifier } : { name: ex.name },
+        );
       }
       // Display the canonical exercise under its own (newest) spelling.
       if (raw === key && !hasOwnName.has(key)) {

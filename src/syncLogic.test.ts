@@ -1,6 +1,8 @@
 import type { Workout } from './types';
+import { EMPTY_LIBRARY } from './library';
 import {
   ALIASES_DOC,
+  LIBRARY_DOC,
   SYNC_URL,
   enqueue,
   mergeRemote,
@@ -59,6 +61,7 @@ describe('pushOutbox', () => {
       [workoutDoc('h1'), ALIASES_DOC],
       history,
       { 'A|': 'B|' },
+      EMPTY_LIBRARY,
       fn,
       99,
     );
@@ -76,6 +79,16 @@ describe('pushOutbox', () => {
     expect(JSON.parse(docs[1].body)).toEqual({ 'A|': 'B|' });
   });
 
+  test('sends the library edits as library:main', async () => {
+    const { fn, calls } = fakeFetch(() => ({ status: 200 }));
+    const library = { entries: { 'A|': { group: 'LEGS' as const } }, distinct: ['A|~B|'] };
+    const r = await pushOutbox('tok', [LIBRARY_DOC], history, {}, library, fn, 7);
+    expect(r).toEqual({ sent: [LIBRARY_DOC] });
+    const [doc] = sentDocs(calls[0]) as { kind: string; id: string; body?: string }[];
+    expect(doc).toMatchObject({ kind: 'library', id: 'main' });
+    expect(JSON.parse(doc.body as string)).toEqual(library);
+  });
+
   test('batches 50 docs per request', async () => {
     const many = Array.from({ length: 120 }, (_, i) => wk(`h${i}`, i));
     const { fn, calls } = fakeFetch(() => ({ status: 200 }));
@@ -84,6 +97,7 @@ describe('pushOutbox', () => {
       many.map(w => workoutDoc(w.id!)),
       many,
       {},
+      EMPTY_LIBRARY,
       fn,
     );
     expect(r.sent).toHaveLength(120);
@@ -93,14 +107,14 @@ describe('pushOutbox', () => {
   test('a 401 is an auth error with nothing sent', async () => {
     const { fn } = fakeFetch(() => ({ status: 401 }));
     expect(
-      await pushOutbox('bad', [workoutDoc('h1')], history, {}, fn),
+      await pushOutbox('bad', [workoutDoc('h1')], history, {}, EMPTY_LIBRARY, fn),
     ).toEqual({ sent: [], error: 'auth' });
   });
 
   test('offline is a network error and never throws', async () => {
     const { fn } = fakeFetch(() => 'offline');
     expect(
-      await pushOutbox('tok', [workoutDoc('h1')], history, {}, fn),
+      await pushOutbox('tok', [workoutDoc('h1')], history, {}, EMPTY_LIBRARY, fn),
     ).toEqual({ sent: [], error: 'network' });
   });
 
@@ -112,6 +126,7 @@ describe('pushOutbox', () => {
       many.map(w => workoutDoc(w.id!)),
       many,
       {},
+      EMPTY_LIBRARY,
       fn,
     );
     expect(r.sent).toHaveLength(50);
@@ -120,7 +135,7 @@ describe('pushOutbox', () => {
 
   test('keys for workouts that no longer exist count as sent without a request', async () => {
     const { fn, calls } = fakeFetch(() => ({ status: 200 }));
-    const r = await pushOutbox('tok', [workoutDoc('gone')], history, {}, fn);
+    const r = await pushOutbox('tok', [workoutDoc('gone')], history, {}, EMPTY_LIBRARY, fn);
     expect(r).toEqual({ sent: [workoutDoc('gone')] });
     expect(calls).toHaveLength(0);
   });
@@ -141,11 +156,21 @@ describe('ping / pullDocs', () => {
           { kind: 'workout', id: 'h1', body: JSON.stringify(wk('h1', 1)), updatedAt: 1 },
           { kind: 'workout', id: 'bad', body: '{nope', updatedAt: 1 },
           { kind: 'aliases', id: 'main', body: '{"A|":"B|"}', updatedAt: 1 },
+          {
+            kind: 'library',
+            id: 'main',
+            body: '{"entries":{"A|":{"notes":"x"}},"distinct":[]}',
+            updatedAt: 1,
+          },
         ],
       },
     }));
     const r = await pullDocs('t', fn);
-    expect(r).toEqual({ workouts: [wk('h1', 1)], aliases: { 'A|': 'B|' } });
+    expect(r).toEqual({
+      workouts: [wk('h1', 1)],
+      aliases: { 'A|': 'B|' },
+      library: { entries: { 'A|': { notes: 'x' } }, distinct: [] },
+    });
   });
 });
 
@@ -154,8 +179,8 @@ describe('mergeRemote', () => {
     const local = [wk('h3', 3, 'LOCAL'), wk('h1', 1)];
     const remote = [wk('h3', 3, 'REMOTE'), wk('h2', 2), wk('h2', 2)];
     const r = mergeRemote(
-      { history: local, aliases: {} },
-      { workouts: remote, aliases: null },
+      { history: local, aliases: {}, library: EMPTY_LIBRARY },
+      { workouts: remote, aliases: null, library: null },
     );
     expect(r.history.map(w => [w.id, w.title])).toEqual([
       ['h3', 'LOCAL'],
@@ -166,17 +191,39 @@ describe('mergeRemote', () => {
   });
 
   test('is order-independent for the remote list', () => {
-    const local = { history: [wk('h1', 1)], aliases: {} };
-    const a = mergeRemote(local, { workouts: [wk('h2', 2), wk('h3', 3)], aliases: null });
-    const b = mergeRemote(local, { workouts: [wk('h3', 3), wk('h2', 2)], aliases: null });
+    const local = { history: [wk('h1', 1)], aliases: {}, library: EMPTY_LIBRARY };
+    const a = mergeRemote(local, { workouts: [wk('h2', 2), wk('h3', 3)], aliases: null, library: null });
+    const b = mergeRemote(local, { workouts: [wk('h3', 3), wk('h2', 2)], aliases: null, library: null });
     expect(a.history).toEqual(b.history);
   });
 
   test('aliases union with local entries winning', () => {
     const r = mergeRemote(
-      { history: [], aliases: { 'A|': 'LOCAL|' } },
-      { workouts: [], aliases: { 'A|': 'REMOTE|', 'B|': 'C|' } },
+      { history: [], aliases: { 'A|': 'LOCAL|' }, library: EMPTY_LIBRARY },
+      { workouts: [], aliases: { 'A|': 'REMOTE|', 'B|': 'C|' }, library: null },
     );
     expect(r.aliases).toEqual({ 'A|': 'LOCAL|', 'B|': 'C|' });
+  });
+
+  test('library entries union with local winning; distinct pairs union', () => {
+    const r = mergeRemote(
+      {
+        history: [],
+        aliases: {},
+        library: { entries: { 'A|': { notes: 'local' } }, distinct: ['A|~B|'] },
+      },
+      {
+        workouts: [],
+        aliases: null,
+        library: {
+          entries: { 'A|': { notes: 'remote' }, 'C|': { group: 'ARMS' } },
+          distinct: ['A|~B|', 'C|~D|'],
+        },
+      },
+    );
+    expect(r.library).toEqual({
+      entries: { 'A|': { notes: 'local' }, 'C|': { group: 'ARMS' } },
+      distinct: ['A|~B|', 'C|~D|'],
+    });
   });
 });

@@ -27,12 +27,14 @@ import {
   loadAliases,
   loadHistory,
   loadLastTemplates,
+  loadLibrary,
   loadOutbox,
   loadSyncToken,
   loadWeek,
   saveAliases,
   saveHistory,
   saveLastTemplates,
+  saveLibrary,
   saveOutbox,
   saveSyncToken,
   saveWeek,
@@ -56,7 +58,16 @@ import {
 } from './src/records';
 import { sortExercises } from './src/historyLogic';
 import {
+  EMPTY_LIBRARY,
+  buildLibrary,
+  setMeta,
+  type LibraryEdits,
+  type LibraryIndex,
+  type LibraryMeta,
+} from './src/library';
+import {
   ALIASES_DOC,
+  LIBRARY_DOC,
   enqueue,
   mergeRemote,
   ping,
@@ -121,6 +132,7 @@ export default function App() {
   const [lastTemplates, setLastTemplates] = useState<Workout[] | null>(null);
   const [history, setHistory] = useState<Workout[] | null>(null);
   const [aliases, setAliases] = useState<Aliases>({});
+  const [libraryEdits, setLibraryEdits] = useState<LibraryEdits>(EMPTY_LIBRARY);
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<AppView>({ kind: 'week' });
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
@@ -134,9 +146,17 @@ export default function App() {
   const flushing = useRef(false);
 
   // PRs, records and per-exercise sessions, replayed from all history.
-  const index = useMemo(
+  const historyIndex = useMemo(
     () => indexHistory(history ?? [], aliases),
     [history, aliases],
+  );
+  // The same index with each exercise shown as its library entry.
+  const index: LibraryIndex = useMemo(
+    () => ({
+      ...historyIndex,
+      exercises: buildLibrary(historyIndex.exercises, libraryEdits, aliases),
+    }),
+    [historyIndex, libraryEdits, aliases],
   );
 
   // Web only: inject PWA tags + register the service worker.
@@ -154,12 +174,14 @@ export default function App() {
       loadAliases(),
       loadSyncToken(),
       loadOutbox(),
-    ]).then(([w, t, h, a, token, o]) => {
+      loadLibrary(),
+    ]).then(([w, t, h, a, token, o, l]) => {
       if (cancelled) return;
       setWeek(w);
       setLastTemplates(t);
       setHistory(h);
       setAliases(a);
+      setLibraryEdits(l);
       setSyncToken(token);
       setOutbox(o);
       setHydrated(true);
@@ -198,13 +220,14 @@ export default function App() {
       outbox,
       history,
       aliases,
+      libraryEdits,
       fetch,
     );
     flushing.current = false;
     if (sent.length > 0) setOutbox(o => o.filter(k => !sent.includes(k)));
     setSyncError(error ?? null);
     return error ?? null;
-  }, [syncToken, history, outbox, aliases]);
+  }, [syncToken, history, outbox, aliases, libraryEdits]);
 
   useEffect(() => {
     if (hydrated) flush();
@@ -465,6 +488,16 @@ export default function App() {
     [aliases, syncToken],
   );
 
+  const onEditLibrary = useCallback(
+    (key: string, patch: Partial<LibraryMeta>) => {
+      const next = setMeta(libraryEdits, key, patch);
+      setLibraryEdits(next);
+      saveLibrary(next).catch(() => {});
+      if (syncToken) setOutbox(o => enqueue(o, [LIBRARY_DOC]));
+    },
+    [libraryEdits, syncToken],
+  );
+
   const onEnableSync = useCallback(
     async (token: string) => {
       setSyncBusy(true);
@@ -476,7 +509,9 @@ export default function App() {
       setSyncToken(token);
       // Turning sync on uploads every workout already saved.
       const ids = (history ?? []).flatMap(w => (w.id ? [w.id] : []));
-      setOutbox(o => enqueue(o, [...ids.map(workoutDoc), ALIASES_DOC]));
+      setOutbox(o =>
+        enqueue(o, [...ids.map(workoutDoc), ALIASES_DOC, LIBRARY_DOC]),
+      );
     },
     [history],
   );
@@ -492,11 +527,16 @@ export default function App() {
       setSyncError(pulled ? pulled.error : pushError);
       return;
     }
-    const merged = mergeRemote({ history, aliases }, pulled);
+    const merged = mergeRemote(
+      { history, aliases, library: libraryEdits },
+      pulled,
+    );
     setHistory(merged.history);
     saveHistory(merged.history).catch(() => {});
     setAliases(merged.aliases);
     saveAliases(merged.aliases).catch(() => {});
+    setLibraryEdits(merged.library);
+    saveLibrary(merged.library).catch(() => {});
     setConfirm({
       title: 'Restore complete',
       message: merged.added
@@ -504,7 +544,7 @@ export default function App() {
         : 'Nothing new: this device already has every workout in the cloud.',
       actions: [{ label: 'OK' }],
     });
-  }, [syncToken, history, aliases, flush]);
+  }, [syncToken, history, aliases, libraryEdits, flush]);
 
   const onDisableSync = useCallback(() => {
     setConfirm({
@@ -615,6 +655,7 @@ export default function App() {
         onOpenWorkout={openWorkout}
         onMerge={into => onMerge(exKey, into)}
         onUnmerge={onUnmerge}
+        onEdit={patch => onEditLibrary(exKey, patch)}
       />
     ) : (
       historyScreen

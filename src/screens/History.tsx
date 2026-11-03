@@ -7,7 +7,6 @@ import {
   fmtSet,
   headline,
   type ExerciseSummary,
-  type HistoryIndex,
   type PrEvent,
 } from '../records';
 import {
@@ -17,9 +16,19 @@ import {
   sortExercises,
   type ExerciseSort,
 } from '../historyLogic';
+import {
+  MUSCLE_GROUPS,
+  filterByGroup,
+  type LibraryEntry,
+  type LibraryIndex,
+  type MuscleGroup,
+} from '../library';
 import type { SyncError } from '../syncLogic';
+import { Chip } from '../components/Chip';
 
 export type HistoryTab = 'workouts' | 'exercises' | 'prs';
+
+export type GroupFilter = MuscleGroup | 'UNTAGGED' | null;
 
 // Lives in App so tab/search/sort survive opening a detail screen.
 export type HistoryUi = {
@@ -27,6 +36,7 @@ export type HistoryUi = {
   query: string;
   oldestFirst: boolean;
   exerciseSort: ExerciseSort;
+  group: GroupFilter;
 };
 
 export const INITIAL_HISTORY_UI: HistoryUi = {
@@ -34,10 +44,11 @@ export const INITIAL_HISTORY_UI: HistoryUi = {
   query: '',
   oldestFirst: false,
   exerciseSort: 'recent',
+  group: null,
 };
 
 type Props = {
-  index: HistoryIndex;
+  index: LibraryIndex;
   ui: HistoryUi;
   setUi: Dispatch<SetStateAction<HistoryUi>>;
   onOpenWorkout: (historyId: string) => void;
@@ -296,6 +307,13 @@ export function HistoryScreen({
                 </Pressable>
               ) : null}
             </View>
+            {ui.tab === 'exercises' ? (
+              <GroupChips
+                exercises={exercises}
+                active={ui.group}
+                onSelect={group => setUi(u => ({ ...u, group }))}
+              />
+            ) : null}
           </View>
 
           <ScrollView
@@ -320,6 +338,7 @@ export function HistoryScreen({
                 index={index}
                 query={ui.query}
                 sort={ui.exerciseSort}
+                group={ui.group}
                 onOpen={onOpenExercise}
               />
             ) : (
@@ -339,6 +358,40 @@ function plural(n: number, word: string): string {
 function nextSort(s: ExerciseSort): ExerciseSort {
   const i = EXERCISE_SORTS.findIndex(x => x.key === s);
   return EXERCISE_SORTS[(i + 1) % EXERCISE_SORTS.length].key;
+}
+
+/** ALL, each muscle group in use, and UNTAGGED when anything lacks one. */
+function GroupChips({
+  exercises,
+  active,
+  onSelect,
+}: {
+  exercises: LibraryEntry[];
+  active: GroupFilter;
+  onSelect: (g: GroupFilter) => void;
+}) {
+  const used = new Set(exercises.map(e => e.group));
+  const options: GroupFilter[] = [
+    null,
+    ...MUSCLE_GROUPS.filter(g => used.has(g)),
+    ...(used.has(undefined) ? (['UNTAGGED'] as const) : []),
+  ];
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginTop: 10, flexGrow: 0 }}
+    >
+      {options.map(g => (
+        <Chip
+          key={g ?? 'ALL'}
+          label={g ?? 'ALL'}
+          active={g === active}
+          onPress={() => onSelect(g)}
+        />
+      ))}
+    </ScrollView>
+  );
 }
 
 function Segmented({
@@ -463,15 +516,17 @@ function ExerciseList({
   index,
   query,
   sort,
+  group,
   onOpen,
 }: {
-  index: HistoryIndex;
+  index: LibraryIndex;
   query: string;
   sort: ExerciseSort;
+  group: GroupFilter;
   onOpen: (exKey: string) => void;
 }) {
   const list = sortExercises(
-    Object.values(index.exercises).filter(e =>
+    filterByGroup(Object.values(index.exercises), group).filter(e =>
       matchesQuery(query, [e.name, e.modifier]),
     ),
     sort,
@@ -497,7 +552,7 @@ function PrList({
   query,
   onOpen,
 }: {
-  index: HistoryIndex;
+  index: LibraryIndex;
   query: string;
   onOpen: (historyId: string) => void;
 }) {
@@ -528,7 +583,7 @@ function ExerciseRow({
   best,
   onPress,
 }: {
-  summary: ExerciseSummary;
+  summary: LibraryEntry;
   best: ReturnType<typeof headline>;
   onPress: () => void;
 }) {
@@ -590,6 +645,7 @@ function ExerciseRow({
             letterSpacing: 0.3,
           }}
         >
+          {summary.group ? `${summary.group} · ` : ''}
           {plural(sessions, 'session')} · last{' '}
           {fmtShortDate(summary.sessions[0]?.completedAtMs)}
         </Text>

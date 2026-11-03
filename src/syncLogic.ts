@@ -5,6 +5,7 @@
 
 import type { Workout } from './types';
 import type { Aliases } from './records';
+import type { LibraryEdits } from './library';
 
 export const SYNC_URL = 'https://workout-sync.machina-infastructure.workers.dev';
 
@@ -12,6 +13,7 @@ export type SyncError = 'auth' | 'network' | 'server';
 type Fetch = typeof fetch;
 
 export const ALIASES_DOC = 'aliases:main';
+export const LIBRARY_DOC = 'library:main';
 
 export function workoutDoc(historyId: string): string {
   return `workout:${historyId}`;
@@ -80,6 +82,7 @@ export async function pushOutbox(
   outbox: string[],
   history: Workout[],
   aliases: Aliases,
+  library: LibraryEdits,
   fetchFn: Fetch,
   nowMs: number = Date.now(),
 ): Promise<{ sent: string[]; error?: SyncError }> {
@@ -94,6 +97,13 @@ export async function pushOutbox(
           kind: 'aliases',
           id: 'main',
           body: JSON.stringify(aliases),
+          updatedAt: nowMs,
+        });
+      } else if (k === LIBRARY_DOC) {
+        docs.push({
+          kind: 'library',
+          id: 'main',
+          body: JSON.stringify(library),
           updatedAt: nowMs,
         });
       } else if (k.startsWith('workout:')) {
@@ -121,32 +131,44 @@ export async function pullDocs(
   token: string,
   fetchFn: Fetch,
 ): Promise<
-  { workouts: Workout[]; aliases: Aliases | null } | { error: SyncError }
+  | { workouts: Workout[]; aliases: Aliases | null; library: LibraryEdits | null }
+  | { error: SyncError }
 > {
   const r = await call(token, 'GET', '/v1/docs', fetchFn);
   if ('error' in r) return r;
   const docs = ((r.data as { docs?: WireDoc[] }).docs ?? []) as WireDoc[];
   const workouts: Workout[] = [];
   let aliases: Aliases | null = null;
+  let library: LibraryEdits | null = null;
   for (const d of docs) {
     try {
       if (d.kind === 'workout') workouts.push(JSON.parse(d.body) as Workout);
       else if (d.kind === 'aliases') aliases = JSON.parse(d.body) as Aliases;
+      else if (d.kind === 'library') library = JSON.parse(d.body) as LibraryEdits;
     } catch {
       // skip an unreadable doc rather than failing the restore
     }
   }
-  return { workouts, aliases };
+  return { workouts, aliases, library };
 }
 
 /**
  * Union remote into local by workout id (local copies win), newest first.
- * Aliases union too, local entries winning.
+ * Aliases and library entries union too, local entries winning.
  */
 export function mergeRemote(
-  local: { history: Workout[]; aliases: Aliases },
-  remote: { workouts: Workout[]; aliases: Aliases | null },
-): { history: Workout[]; aliases: Aliases; added: number } {
+  local: { history: Workout[]; aliases: Aliases; library: LibraryEdits },
+  remote: {
+    workouts: Workout[];
+    aliases: Aliases | null;
+    library: LibraryEdits | null;
+  },
+): {
+  history: Workout[];
+  aliases: Aliases;
+  library: LibraryEdits;
+  added: number;
+} {
   const ids = new Set(local.history.map(w => w.id));
   const extra = new Map<string, Workout>();
   for (const w of remote.workouts) {
@@ -155,9 +177,17 @@ export function mergeRemote(
   const history = [...local.history, ...extra.values()].sort(
     (a, b) => (b.completedAtMs ?? 0) - (a.completedAtMs ?? 0),
   );
+  const lib = remote.library;
   return {
     history,
     aliases: { ...(remote.aliases ?? {}), ...local.aliases },
+    library: {
+      entries: { ...(lib?.entries ?? {}), ...local.library.entries },
+      distinct: [
+        ...local.library.distinct,
+        ...(lib?.distinct ?? []).filter(id => !local.library.distinct.includes(id)),
+      ],
+    },
     added: extra.size,
   };
 }
