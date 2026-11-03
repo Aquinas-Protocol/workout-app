@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme';
@@ -19,6 +19,7 @@ import {
 import {
   MUSCLE_GROUPS,
   filterByGroup,
+  type DuplicatePair,
   type LibraryEntry,
   type LibraryIndex,
   type MuscleGroup,
@@ -55,6 +56,9 @@ type Props = {
   onOpenExercise: (exKey: string) => void;
   sync: { enabled: boolean; pending: number; error: SyncError | null };
   onOpenSync: () => void;
+  duplicates: DuplicatePair[];
+  onMerge: (fromKey: string, intoKey: string) => void;
+  onNotSame: (a: string, b: string) => void;
 };
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -107,6 +111,9 @@ export function HistoryScreen({
   onOpenExercise,
   sync,
   onOpenSync,
+  duplicates,
+  onMerge,
+  onNotSame,
 }: Props) {
   const isEmpty = index.history.length === 0;
   const exercises = Object.values(index.exercises);
@@ -334,13 +341,22 @@ export function HistoryScreen({
                 onOpen={onOpenWorkout}
               />
             ) : ui.tab === 'exercises' ? (
-              <ExerciseList
-                index={index}
-                query={ui.query}
-                sort={ui.exerciseSort}
-                group={ui.group}
-                onOpen={onOpenExercise}
-              />
+              <>
+                {duplicates.length > 0 && !ui.query && !ui.group ? (
+                  <DuplicatesCard
+                    pairs={duplicates}
+                    onMerge={onMerge}
+                    onNotSame={onNotSame}
+                  />
+                ) : null}
+                <ExerciseList
+                  index={index}
+                  query={ui.query}
+                  sort={ui.exerciseSort}
+                  group={ui.group}
+                  onOpen={onOpenExercise}
+                />
+              </>
             ) : (
               <PrList index={index} query={ui.query} onOpen={onOpenWorkout} />
             )}
@@ -509,6 +525,113 @@ function WorkoutList({
         </View>
       ))}
     </>
+  );
+}
+
+const pairLabel = (e: LibraryEntry) =>
+  e.modifier ? `${e.name} (${e.modifier})` : e.name;
+
+/** Library entries that look like the same lift, collapsed until opened. */
+function DuplicatesCard({
+  pairs,
+  onMerge,
+  onNotSame,
+}: {
+  pairs: DuplicatePair[];
+  onMerge: (fromKey: string, intoKey: string) => void;
+  onNotSame: (a: string, b: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View
+      style={{
+        marginBottom: theme.space.cardGap,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.radii.cardPast,
+        borderWidth: 1,
+        borderColor: theme.colors.line,
+        paddingHorizontal: 16,
+      }}
+    >
+      <Pressable
+        onPress={() => setOpen(o => !o)}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          paddingVertical: 14,
+          opacity: pressed ? 0.7 : 1,
+        })}
+      >
+        <Text
+          style={{
+            fontFamily: theme.fonts.mono700,
+            fontSize: 10,
+            color: theme.colors.textMuted,
+            letterSpacing: 1.6,
+          }}
+        >
+          POSSIBLE DUPLICATES · {pairs.length}
+        </Text>
+        <Text
+          style={{
+            fontFamily: theme.fonts.mono700,
+            fontSize: 10,
+            color: theme.colors.textDim,
+            letterSpacing: 1.6,
+          }}
+        >
+          {open ? 'HIDE' : 'REVIEW ›'}
+        </Text>
+      </Pressable>
+      {open
+        ? pairs.map(p => (
+            <View
+              key={`${p.fold.key}~${p.keep.key}`}
+              style={{
+                paddingVertical: 12,
+                borderTopWidth: 1,
+                borderTopColor: theme.colors.line,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: theme.fonts.display700,
+                  fontSize: 14,
+                  color: theme.colors.text,
+                  marginBottom: 2,
+                }}
+              >
+                {pairLabel(p.fold)}{' '}
+                <Text style={{ color: theme.colors.textDim }}>
+                  ({p.fold.sessions.length}×)
+                </Text>
+              </Text>
+              <Text
+                style={{
+                  fontFamily: theme.fonts.mono400,
+                  fontSize: 11,
+                  color: theme.colors.textDim,
+                  marginBottom: 10,
+                }}
+              >
+                looks like {pairLabel(p.keep)} ({p.keep.sessions.length}×)
+              </Text>
+              <View style={{ flexDirection: 'row' }}>
+                <Chip
+                  label="MERGE"
+                  active
+                  onPress={() => onMerge(p.fold.key, p.keep.key)}
+                />
+                <Chip
+                  label="NOT THE SAME"
+                  active={false}
+                  onPress={() => onNotSame(p.fold.key, p.keep.key)}
+                />
+              </View>
+            </View>
+          ))
+        : null}
+    </View>
   );
 }
 

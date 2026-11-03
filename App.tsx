@@ -60,6 +60,8 @@ import { sortExercises } from './src/historyLogic';
 import {
   EMPTY_LIBRARY,
   buildLibrary,
+  markDistinct,
+  possibleDuplicates,
   setMeta,
   type LibraryEdits,
   type LibraryIndex,
@@ -157,6 +159,10 @@ export default function App() {
       exercises: buildLibrary(historyIndex.exercises, libraryEdits, aliases),
     }),
     [historyIndex, libraryEdits, aliases],
+  );
+  const duplicates = useMemo(
+    () => possibleDuplicates(index.exercises, libraryEdits.distinct),
+    [index.exercises, libraryEdits.distinct],
   );
 
   // Web only: inject PWA tags + register the service worker.
@@ -498,6 +504,17 @@ export default function App() {
     [libraryEdits, syncToken],
   );
 
+  // "Keep as new" at import, or "Not the same" on a possible duplicate.
+  const onMarkDistinct = useCallback(
+    (pairs: [string, string][]) => {
+      const next = markDistinct(libraryEdits, pairs);
+      setLibraryEdits(next);
+      saveLibrary(next).catch(() => {});
+      if (syncToken) setOutbox(o => enqueue(o, [LIBRARY_DOC]));
+    },
+    [libraryEdits, syncToken],
+  );
+
   const onEnableSync = useCallback(
     async (token: string) => {
       setSyncBusy(true);
@@ -580,6 +597,9 @@ export default function App() {
       onOpenExercise={openExercise}
       sync={{ enabled: !!syncToken, pending: outbox.length, error: syncError }}
       onOpenSync={() => setView({ kind: 'sync' })}
+      duplicates={duplicates}
+      onMerge={onMerge}
+      onNotSame={(a, b) => onMarkDistinct([[a, b]])}
     />
   );
 
@@ -591,6 +611,10 @@ export default function App() {
         initialTemplates={view.initialTemplates}
         onCancel={onCancelImport}
         onStartWeek={onCommitWeek}
+        library={index.exercises}
+        aliases={aliases}
+        distinct={libraryEdits.distinct}
+        onKeepNew={onMarkDistinct}
       />
     );
   } else if (view.kind === 'workout' && week) {

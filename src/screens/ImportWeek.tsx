@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '../theme';
 import type { Workout } from '../types';
+import type { Aliases } from '../records';
+import type { LibraryEntry } from '../library';
 import { totalTargetSets } from '../workoutLogic';
 import { ImportModal } from '../components/ImportModal';
 
@@ -12,6 +14,10 @@ type Props = {
   onStartWeek: (label: string | undefined, templates: Workout[]) => void;
   initialLabel?: string;
   initialTemplates?: Workout[];
+  library: Record<string, LibraryEntry>;
+  aliases: Aliases;
+  distinct: string[];
+  onKeepNew: (pairs: [string, string][]) => void;
 };
 
 export function ImportWeekScreen({
@@ -19,6 +25,10 @@ export function ImportWeekScreen({
   onStartWeek,
   initialLabel,
   initialTemplates,
+  library,
+  aliases,
+  distinct,
+  onKeepNew,
 }: Props) {
   const [label, setLabel] = useState(initialLabel ?? '');
   const [workouts, setWorkouts] = useState<Workout[]>(
@@ -311,6 +321,10 @@ export function ImportWeekScreen({
         visible={importVisible}
         onClose={() => setImportVisible(false)}
         onImport={addWorkout}
+        library={library}
+        aliases={aliases}
+        distinct={distinct}
+        onKeepNew={onKeepNew}
       />
     </SafeAreaView>
   );

@@ -3,11 +3,16 @@ import { exerciseKey, indexHistory, mergeAlias, unmergeAlias } from './records';
 import { SEED_GROUPS } from './data/muscleGroups';
 import {
   EMPTY_LIBRARY,
+  applyAnswers,
   buildLibrary,
   filterByGroup,
+  looseWords,
   markDistinct,
   pairId,
+  possibleDuplicates,
+  resolveImport,
   setMeta,
+  similarity,
   type LibraryEdits,
 } from './library';
 
@@ -109,5 +114,160 @@ describe('seed map', () => {
       const [name, modifier] = k.split('|');
       expect(exerciseKey(name, modifier || undefined)).toBe(k);
     }
+  });
+});
+
+// Every spelling logged up to 2026-11-03 (from the cloud copy).
+const REAL_SPELLINGS: [string, string?][] = [
+  ['ALT. HAMMER CURL'], ['BACK SQUAT'], ['BACK SQUATS'], ['BARBELL CURL'],
+  ['BARBELL CURLS'], ['BARBELL HIGH PULL'], ['BENCH PRESS'], ['BENCH PRESS', 'BB'],
+  ['BENCH PRESS', 'DB'], ['BENT OVER ROW'], ['CABLE ROPE EXT.'], ['CABLE ROPE EXT?'],
+  ['CLOSE GRIP PRESS'], ['CORE: OBLIQUE CRUNCHES'], ['DB FLY'], ['DEADLIFT'],
+  ['DIPS'], ['DIPS', 'WEIGHTED'], ['DUMBBELL RDL'], ['FACE PULL', 'DB'],
+  ['FLOOR PRESS', 'BB'], ['FRONT RAISE', 'BB'], ['FRONT SQUAT'], ['FRONT SQUATS'],
+  ['GLUTE BRIDGE'], ['GOOD MORNINGS'], ['HACK SQUATS', 'BB'],
+  ['HANG CLEAN AND PRESS', 'DB'], ['HANG CLEAN PRESS'], ['INCLINE BARBELL PRESS'],
+  ['INCLINE PRESS'], ['KB SWINGS'], ['LANDMINE PRESS'], ['LATERAL RAISE'],
+  ['LEG CURLS'], ['LEG EXT.'], ['LEG PRESS'], ['LYING HAMSTRING CURLS'],
+  ['OVERHEAD PRESS'], ['PULL DOWNS'], ['PULL DOWNS?'], ['PULL UP', 'WEIGHTED'],
+  ['PULL UPS', 'WEIGHTED'], ['PULLOVER'], ['PUSH PRESS'], ['RACK PULL'],
+  ['RACK PULLS'], ['ROMANIAN DEADLIFT'], ['SEATED CALF RAISE'], ['SHRUGS'],
+  ['SINGLE ARM DB ROW'], ['SINGLE ARM ROW'], ['SKULL CRUSHERS'],
+  ['STANDING CALF RAISE'], ['T-BAR ROW'], ['TRAP BAR DEADLIFT'], ['TRAP BAR DL'],
+  ['WEIGHTED CHEST DIPS'], ['ZERCHER SQUAT'],
+];
+
+function realLibrary() {
+  const h = REAL_SPELLINGS.map(([name, modifier], i) =>
+    wk((i + 1) * DAY, [ex(name, modifier)]),
+  );
+  return buildLibrary(indexHistory(h, {}).exercises, EMPTY_LIBRARY, {});
+}
+
+const label = (e: { name: string; modifier?: string }) =>
+  e.modifier ? `${e.name} (${e.modifier})` : e.name;
+
+const unordered = (a: string, b: string) => [a, b].sort().join(' ~ ');
+
+describe('similarity', () => {
+  const w = (name: string, modifier?: string) =>
+    looseWords(exerciseKey(name, modifier));
+
+  test('same letters, same words, or one extra word on a 2+ word name', () => {
+    expect(similarity(w('TRAP BAR DL'), w('TRAP BAR DEADLIFT'))).toBe(2);
+    expect(similarity(w('SKULLCRUSHERS'), w('SKULL CRUSHER'))).toBe(2);
+    expect(similarity(w('DIPS', 'WEIGHTED'), w('WEIGHTED DIPS'))).toBe(2);
+    expect(similarity(w('SINGLE ARM ROW'), w('SINGLE ARM DB ROW'))).toBe(1);
+  });
+
+  test('a one-word name never matches on an extra word', () => {
+    expect(similarity(w('DEADLIFT'), w('ROMANIAN DEADLIFT'))).toBe(0);
+    expect(similarity(w('DIPS'), w('DIPS', 'WEIGHTED'))).toBe(0);
+    expect(similarity(w('FRONT SQUAT'), w('BACK SQUAT'))).toBe(0);
+  });
+});
+
+describe('possibleDuplicates', () => {
+  test('real names: exactly the 8 expected pairs', () => {
+    const pairs = possibleDuplicates(realLibrary(), []).map(p =>
+      unordered(label(p.keep), label(p.fold)),
+    );
+    expect(pairs.sort()).toEqual(
+      [
+        unordered('BENCH PRESS (BB)', 'BENCH PRESS'),
+        unordered('BENCH PRESS (DB)', 'BENCH PRESS'),
+        unordered('DIPS (WEIGHTED)', 'WEIGHTED CHEST DIPS'),
+        unordered('DUMBBELL RDL', 'ROMANIAN DEADLIFT'),
+        unordered('HANG CLEAN AND PRESS (DB)', 'HANG CLEAN PRESS'),
+        unordered('INCLINE BARBELL PRESS', 'INCLINE PRESS'),
+        unordered('SINGLE ARM DB ROW', 'SINGLE ARM ROW'),
+        unordered('TRAP BAR DEADLIFT', 'TRAP BAR DL'),
+      ].sort(),
+    );
+  });
+
+  test('keep is the one done more often; distinct pairs drop out', () => {
+    const h = [
+      wk(DAY, [ex('TRAP BAR DL')]),
+      wk(2 * DAY, [ex('TRAP BAR DEADLIFT')]),
+      wk(3 * DAY, [ex('TRAP BAR DEADLIFT')]),
+    ];
+    const l = buildLibrary(indexHistory(h, {}).exercises, EMPTY_LIBRARY, {});
+    const [p] = possibleDuplicates(l, []);
+    expect([p.keep.key, p.fold.key]).toEqual([DEAD, DL]);
+    expect(possibleDuplicates(l, [pairId(DL, DEAD)])).toEqual([]);
+  });
+});
+
+describe('resolveImport / applyAnswers', () => {
+  const l = realLibrary();
+  const paste: Workout = {
+    day: '',
+    title: 'W',
+    dateLabel: '',
+    exercises: [ex('BACK SQUATS'), ex('TRAPBAR DEADLIFT'), ex('ZOTTMAN CURL')],
+  };
+
+  test('known name → display spelling; near name → question; new name passes', () => {
+    const { workout, questions } = resolveImport(paste, l, {}, []);
+    // BACK SQUAT and BACK SQUATS are one entry; its newest spelling shows.
+    expect(workout.exercises[0].name).toBe(l[exerciseKey('BACK SQUAT')].name);
+    expect(workout.exercises[1].name).toBe('TRAPBAR DEADLIFT');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].exId).toBe(paste.exercises[1].id);
+    expect(questions[0].candidates.map(c => c.key).sort()).toEqual(
+      [DEAD, DL].sort(),
+    );
+    expect(workout.exercises[2].name).toBe('ZOTTMAN CURL');
+  });
+
+  test('a merged name is written as its canonical entry', () => {
+    const aliases = mergeAlias({}, DL, DEAD);
+    const h = [
+      wk(DAY, [ex('TRAP BAR DL')]),
+      wk(2 * DAY, [ex('TRAP BAR DEADLIFT')]),
+    ];
+    const merged = buildLibrary(
+      indexHistory(h, aliases).exercises,
+      EMPTY_LIBRARY,
+      aliases,
+    );
+    const { workout, questions } = resolveImport(
+      { ...paste, exercises: [ex('TRAP BAR DL')] },
+      merged,
+      aliases,
+      [],
+    );
+    expect(workout.exercises[0].name).toBe('TRAP BAR DEADLIFT');
+    expect(questions).toEqual([]);
+  });
+
+  test('USE rewrites the name; KEEP AS NEW returns the pairs to remember', () => {
+    const { workout, questions } = resolveImport(paste, l, {}, []);
+    const exId = questions[0].exId;
+    const used = applyAnswers(workout, questions, { [exId]: DEAD }, l);
+    expect(used.workout.exercises[1].name).toBe('TRAP BAR DEADLIFT');
+    expect(used.distinct).toEqual([]);
+    const kept = applyAnswers(workout, questions, { [exId]: null }, l);
+    expect(kept.workout.exercises[1].name).toBe('TRAPBAR DEADLIFT');
+    const raw = exerciseKey('TRAPBAR DEADLIFT');
+    const ids = kept.distinct.map(([a, b]) => pairId(a, b));
+    expect(ids.sort()).toEqual([pairId(raw, DEAD), pairId(raw, DL)].sort());
+    // once remembered, the same paste asks nothing
+    expect(resolveImport(paste, l, {}, ids).questions).toEqual([]);
+  });
+
+  test('a modifier is dropped when the chosen entry has none', () => {
+    const { workout, questions } = resolveImport(
+      { ...paste, exercises: [ex('INCLINE PRESS', 'BB')] },
+      l,
+      {},
+      [],
+    );
+    const pick = exerciseKey('INCLINE PRESS');
+    expect(questions[0].candidates.map(c => c.key)).toContain(pick);
+    const used = applyAnswers(workout, questions, { [questions[0].exId]: pick }, l);
+    expect(used.workout.exercises[0]).not.toHaveProperty('modifier');
+    expect(used.workout.exercises[0].name).toBe('INCLINE PRESS');
   });
 });
