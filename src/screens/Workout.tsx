@@ -14,8 +14,11 @@ import * as Haptics from 'expo-haptics';
 import { theme } from '../theme';
 import type { ActiveSession, Draft } from '../types';
 import {
+  applyAddSet,
   applyLog,
+  applyRemoveSet,
   applySkip,
+  canRemoveSet,
   findExercise,
   focusExercise as focusExerciseLogic,
   getPairPartner,
@@ -24,13 +27,30 @@ import {
   totalDoneSets,
   totalTargetSets,
 } from '../workoutLogic';
+import {
+  annotateSession,
+  exerciseKey,
+  fmtLastTime,
+  fmtRecord,
+  recordToBeat,
+  resolveKey,
+  type Aliases,
+  type HistoryIndex,
+} from '../records';
 import { ExerciseCard } from '../components/ExerciseCard';
+import type {
+  ConfirmAction,
+  ConfirmConfig,
+} from '../components/ConfirmSheet';
 
 type Props = {
   session: ActiveSession;
   setSession: Dispatch<SetStateAction<ActiveSession>>;
   onBack: () => void;
   onEnd: () => void;
+  index: HistoryIndex;
+  aliases: Aliases;
+  showSheet: (config: ConfirmConfig) => void;
 };
 
 function fmtElapsed(ms: number): string {
@@ -40,7 +60,15 @@ function fmtElapsed(ms: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 
-export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
+export function WorkoutScreen({
+  session,
+  setSession,
+  onBack,
+  onEnd,
+  index,
+  aliases,
+  showSheet,
+}: Props) {
   const [pairing, setPairing] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -107,10 +135,40 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
     }).start();
   }, [progress, progressWidth]);
 
+  // PR stars are derived against all history, never read from storage.
+  const shown = useMemo(
+    () => annotateSession(session.workout, index.records, aliases),
+    [session.workout, index.records, aliases],
+  );
+
+  const lastTimes = useMemo(() => {
+    const out: Record<string, string> = {};
+    const nowMs = Date.now();
+    for (const ex of session.workout.exercises) {
+      const key = resolveKey(exerciseKey(ex.name, ex.modifier), aliases);
+      const last = index.exercises[key]?.sessions[0];
+      if (last) out[ex.id] = fmtLastTime(last.sets, last.completedAtMs, nowMs);
+    }
+    return out;
+  }, [session.workout.exercises, index.exercises, aliases]);
+
+  const recordRef = recordToBeat(
+    index.records,
+    aliases,
+    session.workout,
+    session.focus,
+    draft.reps,
+    draft.bw,
+  );
+  const record = recordRef
+    ? fmtRecord(draft.reps, recordRef, draft.bw)
+    : undefined;
+
   const onLog = useCallback(() => {
     setSession(s => {
       const next = applyLog(s, draft);
-      const loggedEx = findExercise(next.workout, s.focus.exId);
+      const annotated = annotateSession(next.workout, index.records, aliases);
+      const loggedEx = findExercise(annotated, s.focus.exId);
       const loggedSlot = loggedEx.sets[s.focus.setIdx];
       if (loggedSlot?.pr) {
         Haptics.notificationAsync(
@@ -121,7 +179,32 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
       }
       return next;
     });
-  }, [draft, setSession]);
+  }, [draft, setSession, index.records, aliases]);
+
+  const onMenu = useCallback(
+    (exId: string) => {
+      const ex = findExercise(session.workout, exId);
+      const actions: ConfirmAction[] = [
+        {
+          label: 'Add set',
+          onPress: () => {
+            Haptics.selectionAsync().catch(() => {});
+            setSession(s => applyAddSet(s, exId));
+          },
+        },
+      ];
+      if (canRemoveSet(ex)) {
+        actions.push({
+          label: 'Remove last set',
+          style: 'destructive',
+          onPress: () => setSession(s => applyRemoveSet(s, exId)),
+        });
+      }
+      actions.push({ label: 'Cancel', style: 'cancel' });
+      showSheet({ title: ex.name, actions });
+    },
+    [session.workout, setSession, showSheet],
+  );
 
   const onSkip = useCallback(() => {
     Haptics.selectionAsync().catch(() => {});
@@ -437,16 +520,15 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {session.workout.exercises.map(ex => {
+        {shown.exercises.map(ex => {
           const partner = getPairPartner(session.workout, session.pair, ex.id);
+          const focused = session.focus.exId === ex.id;
           return (
             <View key={ex.id} style={{ marginBottom: theme.space.cardGap }}>
               <ExerciseCard
                 ex={ex}
-                focused={session.focus.exId === ex.id}
-                focusSetIdx={
-                  session.focus.exId === ex.id ? session.focus.setIdx : -1
-                }
+                focused={focused}
+                focusSetIdx={focused ? session.focus.setIdx : -1}
                 draft={draft}
                 setDraft={setDraft}
                 pairPartnerName={partner ? partner.name.split(' ')[0] : null}
@@ -457,12 +539,14 @@ export function WorkoutScreen({ session, setSession, onBack, onEnd }: Props) {
                 onLog={onLog}
                 onSkip={onSkip}
                 onPair={() => onPair(ex.id)}
-                onMenu={() => {}}
+                onMenu={() => onMenu(ex.id)}
                 onFinish={
                   doneSets >= targetSets && targetSets > 0
                     ? onEnd
                     : undefined
                 }
+                lastTime={lastTimes[ex.id]}
+                record={focused ? record : undefined}
               />
             </View>
           );

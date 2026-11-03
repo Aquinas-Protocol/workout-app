@@ -24,6 +24,9 @@ type Props = {
   // When set, the workout is complete — render the primary action as
   // FINISH WORKOUT and route presses here instead of onLog.
   onFinish?: () => void;
+  // Derived from history (src/records.ts); shown under LOG SET when focused.
+  lastTime?: string;
+  record?: string;
 };
 
 export function ExerciseCard({
@@ -42,6 +45,8 @@ export function ExerciseCard({
   onPair,
   onMenu,
   onFinish,
+  lastTime,
+  record,
 }: Props) {
   const done = exerciseDoneCount(ex);
   const isComplete = done >= ex.targetSets;
@@ -454,11 +459,11 @@ export function ExerciseCard({
             </Pressable>
           </View>
 
-          {ex.lastTime ? (
+          {lastTime ? (
             <Text
               style={{
                 marginTop: 12,
-                marginBottom: 4,
+                marginBottom: record ? 0 : 4,
                 fontFamily: theme.fonts.mono400,
                 fontSize: 10,
                 color: theme.colors.textDim,
@@ -467,9 +472,23 @@ export function ExerciseCard({
               }}
             >
               last time ·{' '}
-              <Text style={{ color: theme.colors.textMuted }}>
-                {ex.lastTime}
-              </Text>
+              <Text style={{ color: theme.colors.textMuted }}>{lastTime}</Text>
+            </Text>
+          ) : null}
+          {record ? (
+            <Text
+              style={{
+                marginTop: lastTime ? 4 : 12,
+                marginBottom: 4,
+                fontFamily: theme.fonts.mono400,
+                fontSize: 10,
+                color: theme.colors.textDim,
+                letterSpacing: 0.5,
+                textAlign: 'center',
+              }}
+            >
+              record ·{' '}
+              <Text style={{ color: theme.colors.pr }}>{record}</Text>
             </Text>
           ) : null}
         </View>

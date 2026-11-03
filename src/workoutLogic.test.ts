@@ -1,8 +1,11 @@
 import type { ActiveSession, Exercise } from './types';
 import { sampleActiveWorkout } from './data/sampleWorkout';
 import {
+  applyAddSet,
   applyLog,
+  applyRemoveSet,
   applySkip,
+  canRemoveSet,
   focusExercise,
   initialFocus,
   nextFocus,
@@ -10,6 +13,7 @@ import {
   summarizeWorkout,
   togglePair,
   totalDoneSets,
+  totalTargetSets,
 } from './workoutLogic';
 
 function mkSession(): ActiveSession {
@@ -39,19 +43,85 @@ describe('workoutLogic', () => {
     expect(next.focus).toEqual({ exId: 'dbpress', setIdx: 0 });
   });
 
-  test('applyLog awards a PR when volume beats the prior best in the exercise', () => {
+  test('applyLog never decides PRs (records.ts derives them)', () => {
     const s = mkSession();
-    // Prior bench best: 10×40 = 400. Log 11×40 = 440 (and reps >= targetReps).
     const next = applyLog(s, { reps: 11, weight: 40, bw: false });
     const bench = next.workout.exercises.find(e => e.id === 'bench')!;
-    expect(bench.sets[3].pr).toBe(true);
+    expect(bench.sets[3].pr).toBeUndefined();
   });
 
-  test('applyLog does NOT award a PR when bw=true', () => {
+  test('re-logging a slot drops its stale pr flag', () => {
     const s = mkSession();
-    const next = applyLog(s, { reps: 20, weight: 0, bw: true });
+    // Sample bench set 2 carries pr: true; re-log it.
+    const next = applyLog(
+      { ...s, focus: { exId: 'bench', setIdx: 2 } },
+      { reps: 9, weight: 40, bw: false },
+    );
     const bench = next.workout.exercises.find(e => e.id === 'bench')!;
-    expect(bench.sets[3].pr).toBeUndefined();
+    expect(bench.sets[2].pr).toBeUndefined();
+  });
+
+  test('applyAddSet appends an empty set, inherits ea, and focuses it', () => {
+    const s = mkSession();
+    const next = applyAddSet(s, 'bench');
+    const bench = next.workout.exercises.find(e => e.id === 'bench')!;
+    expect(bench.sets).toHaveLength(5);
+    expect(bench.targetSets).toBe(5);
+    expect(bench.sets[4]).toEqual({
+      reps: null,
+      weight: null,
+      done: false,
+      ea: true,
+    });
+    expect(next.focus).toEqual({ exId: 'bench', setIdx: 4 });
+    // the input session is untouched
+    expect(s.workout.exercises[0].sets).toHaveLength(4);
+  });
+
+  test('applyAddSet reopens a finished workout', () => {
+    const s = mkSession();
+    s.workout.exercises.forEach(ex =>
+      ex.sets.forEach(set => {
+        if (set.reps == null) set.reps = 5;
+      }),
+    );
+    expect(totalDoneSets(s.workout)).toBe(totalTargetSets(s.workout));
+    const next = applyAddSet(s, 'lat');
+    expect(totalDoneSets(next.workout)).toBeLessThan(
+      totalTargetSets(next.workout),
+    );
+  });
+
+  test('applyRemoveSet drops an unlogged trailing set and refocuses', () => {
+    const s = applyAddSet(mkSession(), 'bench');
+    const bench = s.workout.exercises.find(e => e.id === 'bench')!;
+    expect(canRemoveSet(bench)).toBe(true);
+    const next = applyRemoveSet(s, 'bench');
+    const after = next.workout.exercises.find(e => e.id === 'bench')!;
+    expect(after.sets).toHaveLength(4);
+    expect(after.targetSets).toBe(4);
+    // focus was on the removed slot → first incomplete bench set
+    expect(next.focus).toEqual({ exId: 'bench', setIdx: 3 });
+  });
+
+  test('canRemoveSet refuses a logged trailing set or a single set', () => {
+    const one: Exercise = {
+      id: 'x',
+      name: 'X',
+      targetSets: 1,
+      targetReps: 5,
+      sets: [{ reps: null, weight: null }],
+    };
+    expect(canRemoveSet(one)).toBe(false);
+    const logged: Exercise = {
+      ...one,
+      targetSets: 2,
+      sets: [
+        { reps: null, weight: null },
+        { reps: 5, weight: 100 },
+      ],
+    };
+    expect(canRemoveSet(logged)).toBe(false);
   });
 
   test('applySkip marks slot skipped, counts toward done, advances focus', () => {
@@ -156,5 +226,45 @@ describe('suggestDraft with a descending rep scheme', () => {
   test('empty set suggests its own per-set target', () => {
     expect(suggestDraft(schemeExercise, 0).reps).toBe(5);
     expect(suggestDraft(schemeExercise, 3).reps).toBe(2);
+  });
+
+  test('after logging 5×205 the next rung suggests 4 reps at 205', () => {
+    const ex: Exercise = JSON.parse(JSON.stringify(schemeExercise));
+    ex.sets[0] = { reps: 5, weight: 205, done: true };
+    expect(suggestDraft(ex, 1)).toEqual({ reps: 4, weight: 205, bw: false });
+  });
+
+  test('a uniform scheme still mirrors the last logged reps', () => {
+    const ex: Exercise = {
+      id: 'row',
+      name: 'ROW',
+      targetSets: 3,
+      targetReps: 10,
+      sets: [
+        { reps: 8, weight: 135, done: true },
+        { reps: null, weight: null },
+        { reps: null, weight: null },
+      ],
+    };
+    expect(suggestDraft(ex, 1)).toEqual({ reps: 8, weight: 135, bw: false });
+  });
+
+  test('applyAddSet repeats the last rep-scheme target', () => {
+    const workout = {
+      day: '',
+      title: 'T',
+      dateLabel: '',
+      exercises: [JSON.parse(JSON.stringify(schemeExercise)) as Exercise],
+    };
+    const s: ActiveSession = {
+      workout,
+      focus: { exId: 'deadlift', setIdx: 0 },
+      pair: null,
+      startedAtMs: 0,
+    };
+    const next = applyAddSet(s, 'deadlift');
+    expect(next.workout.exercises[0].repScheme).toEqual([5, 4, 3, 2, 1, 1]);
+    const removed = applyRemoveSet(next, 'deadlift');
+    expect(removed.workout.exercises[0].repScheme).toEqual([5, 4, 3, 2, 1]);
   });
 });

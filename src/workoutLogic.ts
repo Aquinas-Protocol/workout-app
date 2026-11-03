@@ -96,8 +96,9 @@ export function getPairPartner(
 /**
  * Compute the suggested draft for a focused slot:
  *  - if the slot has a logged value, mirror it
- *  - else use the most recent logged set in this exercise (walking back)
- *  - else use targetReps / 0
+ *  - else reps = the slot's rep-scheme target (stack-downs step 5→4→3…),
+ *    falling back to the most recent logged set, then targetReps
+ *  - weight = the most recent logged set in this exercise, else 0
  *  - bw mirrors the slot's bw flag (so dips default to BW entry)
  */
 export function suggestDraft(ex: Exercise, setIdx: number): Draft {
@@ -113,7 +114,7 @@ export function suggestDraft(ex: Exercise, setIdx: number): Draft {
     .reverse()
     .find(s => s.reps != null);
   return {
-    reps: lastDone?.reps ?? ex.repScheme?.[setIdx] ?? ex.targetReps,
+    reps: ex.repScheme?.[setIdx] ?? lastDone?.reps ?? ex.targetReps,
     weight: lastDone?.weight ?? 0,
     bw: !!slot.bw,
   };
@@ -166,9 +167,8 @@ export function initialFocus(workout: Workout): Focus {
 
 /**
  * Apply LOG SET: write draft into the focused slot and advance focus.
- * Includes the PR heuristic: only on a previously-empty slot, only when
- * reps >= targetReps and weighted, and only when total volume beats the
- * best previously-logged set in this exercise.
+ * PRs are not decided here — they are derived against all history by
+ * annotateSession (src/records.ts), so any stale flag is dropped.
  */
 export function applyLog(
   session: ActiveSession,
@@ -178,7 +178,6 @@ export function applyLog(
   const workout = clone(session.workout);
   const ex = findExercise(workout, focus.exId);
   const slot = ex.sets[focus.setIdx];
-  const wasEmpty = slot.reps == null;
 
   ex.sets[focus.setIdx] = {
     ...slot,
@@ -188,18 +187,7 @@ export function applyLog(
     done: true,
     skipped: false,
   };
-
-  const setTarget = ex.repScheme?.[focus.setIdx] ?? ex.targetReps;
-  if (wasEmpty && !draft.bw && draft.reps >= setTarget) {
-    const bestPrev = Math.max(
-      0,
-      ...ex.sets
-        .filter((s, i) => i !== focus.setIdx && s.reps != null && !s.bw)
-        .map(s => (s.reps as number) * (s.weight || 0)),
-    );
-    const cur = draft.reps * (draft.weight || 0);
-    if (cur > bestPrev) ex.sets[focus.setIdx].pr = true;
-  }
+  delete ex.sets[focus.setIdx].pr;
 
   const next = nextFocus(workout, pair, focus.exId, focus.setIdx);
   return {
@@ -226,6 +214,59 @@ export function applySkip(session: ActiveSession): ActiveSession {
     workout,
     focus: next ?? focus,
   };
+}
+
+/**
+ * ⋯ → Add set: append an empty set to an exercise mid-workout and focus it.
+ * Session-only (the week template is untouched). The new set inherits ea/bw
+ * from the last set; a rep scheme repeats its last target.
+ */
+export function applyAddSet(
+  session: ActiveSession,
+  exId: string,
+): ActiveSession {
+  const workout = clone(session.workout);
+  const ex = findExercise(workout, exId);
+  const last = ex.sets[ex.sets.length - 1];
+  const set: WorkoutSet = { reps: null, weight: null, done: false };
+  if (last?.ea) set.ea = true;
+  if (last?.bw) set.bw = true;
+  ex.sets.push(set);
+  ex.targetSets += 1;
+  if (ex.repScheme && ex.repScheme.length > 0) {
+    ex.repScheme.push(ex.repScheme[ex.repScheme.length - 1]);
+  }
+  return {
+    ...session,
+    workout,
+    focus: { exId, setIdx: ex.sets.length - 1 },
+  };
+}
+
+/** Only an unlogged trailing set can be removed, and never the last one. */
+export function canRemoveSet(ex: Exercise): boolean {
+  return ex.sets.length > 1 && ex.sets[ex.sets.length - 1].reps == null;
+}
+
+/** ⋯ → Remove set: drop the exercise's unlogged trailing set. */
+export function applyRemoveSet(
+  session: ActiveSession,
+  exId: string,
+): ActiveSession {
+  const workout = clone(session.workout);
+  const ex = findExercise(workout, exId);
+  if (!canRemoveSet(ex)) return session;
+  ex.sets.pop();
+  ex.targetSets -= 1;
+  if (ex.repScheme && ex.repScheme.length > ex.sets.length) {
+    ex.repScheme.pop();
+  }
+  let focus = session.focus;
+  if (focus.exId === exId && focus.setIdx >= ex.sets.length) {
+    const idx = firstIncompleteSetIdx(ex);
+    focus = idx >= 0 ? { exId, setIdx: idx } : initialFocus(workout);
+  }
+  return { ...session, workout, focus };
 }
 
 /**

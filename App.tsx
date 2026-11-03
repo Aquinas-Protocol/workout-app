@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -38,6 +38,7 @@ import {
   syncSession,
   templatesFromWeek,
 } from './src/weekLogic';
+import { indexHistory, type Aliases } from './src/records';
 import { initPwa } from './src/pwa';
 import { EmptyWeekState } from './src/components/EmptyWeekState';
 import {
@@ -52,6 +53,8 @@ import { HistoryScreen } from './src/screens/History';
 import { PastWorkoutScreen } from './src/screens/PastWorkout';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+const NO_ALIASES: Aliases = {};
 
 type AppView =
   | { kind: 'week' }
@@ -82,6 +85,12 @@ export default function App() {
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<AppView>({ kind: 'week' });
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
+
+  // PRs, records and per-exercise sessions, replayed from all history.
+  const index = useMemo(
+    () => indexHistory(history ?? [], NO_ALIASES),
+    [history],
+  );
 
   // Web only: inject PWA tags + register the service worker.
   useEffect(() => {
@@ -316,22 +325,31 @@ export default function App() {
           setSession={setSession}
           onBack={onBackToWeek}
           onEnd={onEndWorkout}
+          index={index}
+          aliases={NO_ALIASES}
+          showSheet={setConfirm}
         />
       );
     }
   } else if (view.kind === 'history') {
     content = (
-      <HistoryScreen history={history} onTap={onTapHistoryRow} />
+      <HistoryScreen
+        history={history ? index.history : null}
+        onTap={onTapHistoryRow}
+      />
     );
   } else if (view.kind === 'history-detail') {
-    const entry = history?.[view.index];
+    const entry = index.history[view.index];
     if (entry) {
       content = (
         <PastWorkoutScreen workout={entry} onBack={onBackToHistory} />
       );
     } else {
       content = (
-        <HistoryScreen history={history} onTap={onTapHistoryRow} />
+        <HistoryScreen
+          history={history ? index.history : null}
+          onTap={onTapHistoryRow}
+        />
       );
     }
   } else if (week) {

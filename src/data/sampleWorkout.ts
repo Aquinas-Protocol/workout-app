@@ -17,7 +17,6 @@ export const sampleActiveWorkout: Workout = {
       modifier: 'DB',
       targetSets: 4,
       targetReps: 10,
-      lastTime: '10 @ 35 ea · 5d ago',
       sets: [
         { reps: 10, weight: 40, ea: true, done: true },
         { reps: 8, weight: 40, ea: true, done: true },
@@ -30,7 +29,6 @@ export const sampleActiveWorkout: Workout = {
       name: 'DUMBBELL SEATED PRESS',
       targetSets: 4,
       targetReps: 10,
-      lastTime: '10 @ 20 ea · 5d ago',
       sets: [
         { reps: null, weight: null, ea: true, done: false },
         { reps: null, weight: null, ea: true, done: false },
@@ -43,7 +41,6 @@ export const sampleActiveWorkout: Workout = {
       name: 'WEIGHTED CHEST DIPS',
       targetSets: 4,
       targetReps: 10,
-      lastTime: '5 @ BW · 12d ago',
       sets: [
         { reps: null, weight: null, bw: true, done: false },
         { reps: null, weight: null, bw: true, done: false },
@@ -56,7 +53,6 @@ export const sampleActiveWorkout: Workout = {
       name: 'LATERAL RAISE',
       targetSets: 4,
       targetReps: 10,
-      lastTime: '9 @ 10 ea · 5d ago',
       sets: [
         { reps: null, weight: null, ea: true, done: false },
         { reps: null, weight: null, ea: true, done: false },

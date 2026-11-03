@@ -20,11 +20,12 @@ export type Exercise = {
   // Per-set target reps for stacked/descending schemes, e.g. [5,4,3,2,1];
   // index-aligned with sets. Absent for uniform schemes.
   repScheme?: number[];
-  lastTime?: string;
   sets: WorkoutSet[];
 };
 
 export type Workout = {
+  // Stable id, set on history entries only.
+  id?: string;
   day: string;
   title: string;
   dateLabel: string;

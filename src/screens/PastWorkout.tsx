@@ -262,8 +262,9 @@ export function PastWorkoutScreen({ workout, onBack }: Props) {
 }
 
 function prLabel(ex: Exercise, set: WorkoutSet): string {
-  const w = set.weight ?? 0;
   const reps = set.reps ?? 0;
+  if (set.bw) return `${capitalize(ex.name)} · ${reps} BW`;
+  const w = set.weight ?? 0;
   const ea = set.ea ? ' ea' : '';
   return `${capitalize(ex.name)} · ${reps} × ${w}${ea}`;
 }
