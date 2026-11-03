@@ -4,9 +4,15 @@ import {
   exerciseKey,
   fmtLastTime,
   fmtRecord,
+  fmtSet,
+  headline,
   indexHistory,
+  keyLabel,
+  mergeAlias,
   recordToBeat,
+  repMaxBoard,
   resolveKey,
+  unmergeAlias,
 } from './records';
 
 const DAY = 86400000;
@@ -215,6 +221,69 @@ describe('recordToBeat', () => {
     expect(
       recordToBeat(records, {}, live, { exId: 'new-lift', setIdx: 0 }, 5, false),
     ).toBeNull();
+  });
+});
+
+describe('aliases', () => {
+  test('mergeAlias points the key at the canonical target and flattens chains', () => {
+    const a1 = mergeAlias({}, 'A|', 'B|');
+    expect(a1).toEqual({ 'A|': 'B|' });
+    // B merged into C: A follows along (one hop)
+    const a2 = mergeAlias(a1, 'B|', 'C|');
+    expect(a2).toEqual({ 'A|': 'C|', 'B|': 'C|' });
+    // merging into an alias resolves to its canonical key
+    expect(mergeAlias(a2, 'D|', 'A|')['D|']).toBe('C|');
+  });
+
+  test('mergeAlias refuses a cycle or a self-merge', () => {
+    const a = { 'A|': 'B|' };
+    expect(mergeAlias(a, 'B|', 'A|')).toBe(a);
+    expect(mergeAlias(a, 'B|', 'B|')).toBe(a);
+  });
+
+  test('unmergeAlias removes one key without touching the input', () => {
+    const a = { 'A|': 'C|', 'B|': 'C|' };
+    expect(unmergeAlias(a, 'A|')).toEqual({ 'B|': 'C|' });
+    expect(a).toEqual({ 'A|': 'C|', 'B|': 'C|' });
+  });
+});
+
+describe('repMaxBoard / headline', () => {
+  const { records } = indexHistory(
+    [wk(DAY, [stackDown()]), wk(2 * DAY, [ex('DEADLIFT', [set(3, 230)])])],
+    {},
+  );
+  const rec = records[exerciseKey('DEADLIFT')];
+
+  test('one row per rep count, never rising as reps go up', () => {
+    const board = repMaxBoard(rec);
+    expect(board.map(r => [r.reps, r.best.weight])).toEqual([
+      [1, 240],
+      [2, 235],
+      [3, 230],
+      [4, 215],
+      [5, 205],
+    ]);
+    // 2-rep row is held by the 2×235 set itself
+    expect(board[1].best.reps).toBe(2);
+  });
+
+  test('headline is the heaviest set; BW-only falls back to the BW best', () => {
+    expect(headline(rec)?.weight).toBe(240);
+    const bwOnly = indexHistory(
+      [wk(DAY, [ex('DIP', [set(12, 0, { bw: true, weight: null })])])],
+      {},
+    ).records[exerciseKey('DIP')];
+    expect(headline(bwOnly)?.reps).toBe(12);
+    expect(headline(undefined)).toBeNull();
+  });
+
+  test('keyLabel and fmtSet', () => {
+    expect(keyLabel('PULL UP|WEIGHTED')).toBe('PULL UP (WEIGHTED)');
+    expect(keyLabel('DEADLIFT|')).toBe('DEADLIFT');
+    expect(fmtSet({ reps: 5, weight: 205 })).toBe('5×205');
+    expect(fmtSet({ reps: 10, weight: 40, ea: true })).toBe('10×40 ea');
+    expect(fmtSet({ reps: 12, weight: null })).toBe('12 BW');
   });
 });
 

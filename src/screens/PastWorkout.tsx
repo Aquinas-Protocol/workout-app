@@ -7,6 +7,7 @@ import { SetPill } from '../components/SetPill';
 type Props = {
   workout: Workout;
   onBack: () => void;
+  backLabel?: string;
 };
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -48,7 +49,11 @@ function fmtVolume(v: number | undefined): string {
   return k >= 10 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
 }
 
-export function PastWorkoutScreen({ workout, onBack }: Props) {
+export function PastWorkoutScreen({
+  workout,
+  onBack,
+  backLabel = '← HISTORY',
+}: Props) {
   const pr = findFirstPr(workout);
 
   const eyebrowBits: string[] = [];
@@ -87,7 +92,7 @@ export function PastWorkoutScreen({ workout, onBack }: Props) {
               letterSpacing: 1.5,
             }}
           >
-            ← HISTORY
+            {backLabel}
           </Text>
         </Pressable>
         <Text

@@ -24,9 +24,11 @@ import type { ActiveSession, Week, Workout } from './src/types';
 import {
   appendHistory,
   clearWeek,
+  loadAliases,
   loadHistory,
   loadLastTemplates,
   loadWeek,
+  saveAliases,
   saveLastTemplates,
   saveWeek,
 } from './src/storage';
@@ -38,7 +40,16 @@ import {
   syncSession,
   templatesFromWeek,
 } from './src/weekLogic';
-import { indexHistory, type Aliases } from './src/records';
+import {
+  indexHistory,
+  keyLabel,
+  mergeAlias,
+  resolveKey,
+  unmergeAlias,
+  type Aliases,
+  type ExerciseSummary,
+} from './src/records';
+import { sortExercises } from './src/historyLogic';
 import { initPwa } from './src/pwa';
 import { EmptyWeekState } from './src/components/EmptyWeekState';
 import {
@@ -49,12 +60,15 @@ import { TabBar, type TabKey } from './src/components/TabBar';
 import { WeekScreen } from './src/screens/Week';
 import { WorkoutScreen } from './src/screens/Workout';
 import { ImportWeekScreen } from './src/screens/ImportWeek';
-import { HistoryScreen } from './src/screens/History';
+import {
+  HistoryScreen,
+  INITIAL_HISTORY_UI,
+  type HistoryUi,
+} from './src/screens/History';
 import { PastWorkoutScreen } from './src/screens/PastWorkout';
+import { ExerciseDetailScreen } from './src/screens/ExerciseDetail';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
-
-const NO_ALIASES: Aliases = {};
 
 type AppView =
   | { kind: 'week' }
@@ -65,7 +79,14 @@ type AppView =
       initialTemplates?: Workout[];
     }
   | { kind: 'history' }
-  | { kind: 'history-detail'; index: number };
+  // `back` is the view that opened the detail screen.
+  | { kind: 'history-detail'; historyId: string; back: AppView }
+  | { kind: 'exercise-detail'; exKey: string; back: AppView };
+
+function exerciseLabel(e: ExerciseSummary | undefined, key: string): string {
+  if (!e) return keyLabel(key);
+  return e.modifier ? `${e.name} (${e.modifier})` : e.name;
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -82,14 +103,16 @@ export default function App() {
   const [week, setWeek] = useState<Week | null>(null);
   const [lastTemplates, setLastTemplates] = useState<Workout[] | null>(null);
   const [history, setHistory] = useState<Workout[] | null>(null);
+  const [aliases, setAliases] = useState<Aliases>({});
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<AppView>({ kind: 'week' });
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
+  const [historyUi, setHistoryUi] = useState<HistoryUi>(INITIAL_HISTORY_UI);
 
   // PRs, records and per-exercise sessions, replayed from all history.
   const index = useMemo(
-    () => indexHistory(history ?? [], NO_ALIASES),
-    [history],
+    () => indexHistory(history ?? [], aliases),
+    [history, aliases],
   );
 
   // Web only: inject PWA tags + register the service worker.
@@ -100,15 +123,19 @@ export default function App() {
   // Hydrate from storage.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadWeek(), loadLastTemplates(), loadHistory()]).then(
-      ([w, t, h]) => {
-        if (cancelled) return;
-        setWeek(w);
-        setLastTemplates(t);
-        setHistory(h);
-        setHydrated(true);
-      },
-    );
+    Promise.all([
+      loadWeek(),
+      loadLastTemplates(),
+      loadHistory(),
+      loadAliases(),
+    ]).then(([w, t, h, a]) => {
+      if (cancelled) return;
+      setWeek(w);
+      setLastTemplates(t);
+      setHistory(h);
+      setAliases(a);
+      setHydrated(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -141,6 +168,15 @@ export default function App() {
       setView({ kind: 'week' });
     }
   }, [view, week]);
+
+  // Self-heal an exercise page whose key stopped being canonical (merged).
+  useEffect(() => {
+    if (view.kind !== 'exercise-detail' || index.exercises[view.exKey]) return;
+    const resolved = resolveKey(view.exKey, aliases);
+    setView(
+      index.exercises[resolved] ? { ...view, exKey: resolved } : view.back,
+    );
+  }, [view, index.exercises, aliases]);
 
   // Handlers ─────────────────────────────────────────────────
 
@@ -293,17 +329,73 @@ export default function App() {
     [refreshHistory],
   );
 
-  const onTapHistoryRow = useCallback((index: number) => {
-    setView({ kind: 'history-detail', index });
+  const openWorkout = useCallback((historyId: string) => {
+    setView(v => ({ kind: 'history-detail', historyId, back: v }));
   }, []);
 
-  const onBackToHistory = useCallback(() => {
-    setView({ kind: 'history' });
+  const openExercise = useCallback((exKey: string) => {
+    setView(v => ({ kind: 'exercise-detail', exKey, back: v }));
   }, []);
+
+  const goBack = useCallback(() => {
+    setView(v => ('back' in v ? v.back : { kind: 'history' }));
+  }, []);
+
+  const onMerge = useCallback(
+    (from: string, into: string) => {
+      setConfirm({
+        title: 'Merge exercises?',
+        message: `${exerciseLabel(index.exercises[from], from)} will count as ${exerciseLabel(index.exercises[into], into)}. Past sets combine and PRs are recalculated. You can unmerge later.`,
+        actions: [
+          {
+            label: 'Merge',
+            onPress: () => {
+              const next = mergeAlias(aliases, from, into);
+              setAliases(next);
+              saveAliases(next).catch(() => {});
+            },
+          },
+          { label: 'Cancel', style: 'cancel' },
+        ],
+      });
+    },
+    [aliases, index.exercises],
+  );
+
+  const onUnmerge = useCallback(
+    (key: string) => {
+      setConfirm({
+        title: 'Unmerge?',
+        message: `${keyLabel(key)} becomes its own exercise again. PRs are recalculated.`,
+        actions: [
+          {
+            label: 'Unmerge',
+            onPress: () => {
+              const next = unmergeAlias(aliases, key);
+              setAliases(next);
+              saveAliases(next).catch(() => {});
+            },
+          },
+          { label: 'Cancel', style: 'cancel' },
+        ],
+      });
+    },
+    [aliases],
+  );
 
   // Render ───────────────────────────────────────────────────
 
   if (!fontsLoaded || !hydrated) return null;
+
+  const historyScreen = (
+    <HistoryScreen
+      index={index}
+      ui={historyUi}
+      setUi={setHistoryUi}
+      onOpenWorkout={openWorkout}
+      onOpenExercise={openExercise}
+    />
+  );
 
   let content: React.ReactNode;
   if (view.kind === 'import-week') {
@@ -326,32 +418,47 @@ export default function App() {
           onBack={onBackToWeek}
           onEnd={onEndWorkout}
           index={index}
-          aliases={NO_ALIASES}
+          aliases={aliases}
           showSheet={setConfirm}
         />
       );
     }
   } else if (view.kind === 'history') {
-    content = (
-      <HistoryScreen
-        history={history ? index.history : null}
-        onTap={onTapHistoryRow}
-      />
-    );
+    content = historyScreen;
   } else if (view.kind === 'history-detail') {
-    const entry = index.history[view.index];
-    if (entry) {
-      content = (
-        <PastWorkoutScreen workout={entry} onBack={onBackToHistory} />
-      );
-    } else {
-      content = (
-        <HistoryScreen
-          history={history ? index.history : null}
-          onTap={onTapHistoryRow}
-        />
-      );
-    }
+    const entry = index.history.find(w => w.id === view.historyId);
+    content = entry ? (
+      <PastWorkoutScreen
+        workout={entry}
+        onBack={goBack}
+        backLabel={
+          view.back.kind === 'exercise-detail' ? '← EXERCISE' : '← HISTORY'
+        }
+      />
+    ) : (
+      historyScreen
+    );
+  } else if (view.kind === 'exercise-detail') {
+    const exKey = view.exKey;
+    const summary = index.exercises[exKey];
+    content = summary ? (
+      <ExerciseDetailScreen
+        key={exKey}
+        summary={summary}
+        records={index.records[exKey]}
+        mergedHere={Object.keys(aliases).filter(k => aliases[k] === exKey)}
+        mergeTargets={sortExercises(
+          Object.values(index.exercises).filter(e => e.key !== exKey),
+          'az',
+        )}
+        onBack={goBack}
+        onOpenWorkout={openWorkout}
+        onMerge={into => onMerge(exKey, into)}
+        onUnmerge={onUnmerge}
+      />
+    ) : (
+      historyScreen
+    );
   } else if (week) {
     content = (
       <WeekScreen
@@ -378,7 +485,9 @@ export default function App() {
   const showTabs =
     view.kind !== 'workout' && view.kind !== 'import-week';
   const activeTab: TabKey =
-    view.kind === 'history' || view.kind === 'history-detail'
+    view.kind === 'history' ||
+    view.kind === 'history-detail' ||
+    view.kind === 'exercise-detail'
       ? 'history'
       : 'week';
 

@@ -10,6 +10,7 @@ import type {
   Workout,
   WorkoutSet,
 } from './types';
+import { historyId } from './historyLogic';
 
 export function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
@@ -66,6 +67,7 @@ export function summarizeWorkout(
   const durationMin = Math.max(1, Math.round((nowMs - startedAtMs) / 60000));
   return {
     ...workout,
+    id: historyId(nowMs),
     duration: `${durationMin} min`,
     totalSets,
     totalReps,

@@ -292,6 +292,62 @@ export function recordToBeat(
   return bw ? scratch.bw : bestAtLeast(scratch, reps);
 }
 
+/**
+ * Merge `from` into `into`'s canonical exercise. Anything already merged into
+ * `from` moves along, so the map stays one hop deep. A merge that would close
+ * a cycle is a no-op.
+ */
+export function mergeAlias(a: Aliases, from: string, into: string): Aliases {
+  const target = resolveKey(into, a);
+  if (target === from || resolveKey(from, a) === target) return a;
+  const next: Aliases = {};
+  for (const k of Object.keys(a)) next[k] = a[k] === from ? target : a[k];
+  next[from] = target;
+  return next;
+}
+
+export function unmergeAlias(a: Aliases, key: string): Aliases {
+  const next = { ...a };
+  delete next[key];
+  return next;
+}
+
+/** One row per rep count logged: the heaviest set at that many reps or more. */
+export function repMaxBoard(
+  rec: ExerciseRecords | undefined,
+): { reps: number; best: SetRef }[] {
+  if (!rec) return [];
+  return Object.keys(rec.byReps)
+    .map(Number)
+    .sort((x, y) => x - y)
+    .map(reps => ({ reps, best: bestAtLeast(rec, reps) as SetRef }));
+}
+
+/** The exercise's top set: heaviest weight (ties → more reps), else BW best. */
+export function headline(rec: ExerciseRecords | undefined): SetRef | null {
+  if (!rec) return null;
+  let best: SetRef | null = null;
+  for (const k of Object.keys(rec.byReps)) {
+    const ref = rec.byReps[Number(k)];
+    const w = ref.weight ?? 0;
+    const bw = best?.weight ?? 0;
+    if (!best || w > bw || (w === bw && ref.reps > best.reps)) best = ref;
+  }
+  return best ?? rec.bw;
+}
+
+/** "PULL UP|WEIGHTED" → "PULL UP (WEIGHTED)" */
+export function keyLabel(key: string): string {
+  const [name, modifier] = key.split('|');
+  return modifier ? `${name} (${modifier})` : name;
+}
+
+/** "5×205" / "12 BW" / "10×40 ea" */
+export function fmtSet(ref: { reps: number; weight: number | null; ea?: boolean }): string {
+  if (ref.weight == null) return `${ref.reps} BW`;
+  return `${ref.reps}×${ref.weight}${ref.ea ? ' ea' : ''}`;
+}
+
 function daysAgo(ms: number | undefined, nowMs: number): string {
   if (!ms) return '';
   const d = Math.floor((nowMs - ms) / 86400000);
