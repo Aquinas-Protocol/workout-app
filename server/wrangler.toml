@@ -15,6 +15,5 @@ ALLOWED_ORIGINS = "https://aquinas-protocol.github.io,http://localhost:19006,htt
 [[d1_databases]]
 binding = "DB"
 database_name = "workout-sync"
-# Placeholder until `npx wrangler d1 create workout-sync` prints the real id.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "9ddce76a-2ea3-46c7-b6b8-f88c0f0a5957"
 migrations_dir = "migrations"
