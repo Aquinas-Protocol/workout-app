@@ -10,6 +10,14 @@
 //   5 @ BW, 3 BW
 //   9 @ 45
 //
+// Tri sets / supersets: a header starting "TRI SET", "SUPERSET" or
+// "GIANT SET" opens a group, and the bare names listed under it (Notes
+// indents them) join it with the same sets × reps:
+//   TRI SET LATERAL RAISE 4 SETS X 12 REPS
+//       BENT OVER REVERSE FLY
+//       FRONT RAISE
+// The next ordinary header closes the group.
+//
 // Lines that look like neither a header nor a sets line are reported as
 // errors but do not abort the parse — we return whatever we could extract.
 
@@ -19,6 +27,9 @@ const HEADER_RE =
   /^(.+?)(?:\s*\(([^)]+)\))?\s+(\d+)\s*(?:SETS?\s*)?[X×x]\s*(\d+(?:\s*[,/]\s*\d+)*)(?:\s*REPS?)?$/i;
 const SET_RE = /^(\d+)\s*@\s*(BW|\d+)\s*(ea)?$/i;
 const SET_BW_SHORT_RE = /^(\d+)\s+BW$/i;
+const GROUP_PREFIX_RE = /^(?:TRI|SUPER|GIANT)[\s-]*SET\s+/i;
+// A group member line: just a name, optionally with a (MODIFIER).
+const MEMBER_RE = /^([A-Za-z][^,;@()]*?)(?:\s*\(([^)]+)\))?$/;
 
 export type ParseResult =
   | { ok: true; workout: Workout; warnings: string[] }
@@ -95,6 +106,8 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
   const ids = new Set<string>();
 
   let current: Exercise | null = null;
+  // The open tri set / superset's lead exercise, if any.
+  let groupLead: Exercise | null = null;
   let defaults: { ea?: boolean; bw?: boolean } = {};
   let parsedInExercise = 0;
 
@@ -107,7 +120,8 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
     if (header) {
       closeCurrent();
       const [, name, modifier, sets, reps] = header;
-      const cleanName = name.trim().toUpperCase();
+      const grouped = GROUP_PREFIX_RE.test(name);
+      const cleanName = name.replace(GROUP_PREFIX_RE, '').trim().toUpperCase();
       const id = slugify(cleanName, ids);
       ids.add(id);
       const repList = parseRepList(reps);
@@ -125,6 +139,30 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
         targetSets: isScheme ? repList.length : statedSets,
         targetReps: repList[0],
         ...(isScheme ? { repScheme: repList } : {}),
+        sets: [],
+      };
+      defaults = {};
+      parsedInExercise = 0;
+      exercises.push(current);
+      groupLead = grouped ? current : null;
+      continue;
+    }
+
+    const member = groupLead ? MEMBER_RE.exec(line) : null;
+    if (groupLead && member) {
+      closeCurrent();
+      const memberName = member[1].trim().toUpperCase();
+      const id = slugify(memberName, ids);
+      ids.add(id);
+      groupLead.superset = groupLead.id;
+      current = {
+        id,
+        name: memberName,
+        modifier: member[2]?.trim().toUpperCase(),
+        targetSets: groupLead.targetSets,
+        targetReps: groupLead.targetReps,
+        ...(groupLead.repScheme ? { repScheme: [...groupLead.repScheme] } : {}),
+        superset: groupLead.id,
         sets: [],
       };
       defaults = {};

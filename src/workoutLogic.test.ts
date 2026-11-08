@@ -7,6 +7,7 @@ import {
   applySkip,
   canRemoveSet,
   focusExercise,
+  getGroupPartners,
   initialFocus,
   nextFocus,
   suggestDraft,
@@ -266,5 +267,56 @@ describe('suggestDraft with a descending rep scheme', () => {
     expect(next.workout.exercises[0].repScheme).toEqual([5, 4, 3, 2, 1, 1]);
     const removed = applyRemoveSet(next, 'deadlift');
     expect(removed.workout.exercises[0].repScheme).toEqual([5, 4, 3, 2, 1]);
+  });
+});
+
+describe('tri set rotation', () => {
+  const mk = (id: string, superset?: string): Exercise => ({
+    id,
+    name: `${id.toUpperCase()} RAISE`,
+    targetSets: 2,
+    targetReps: 12,
+    ...(superset ? { superset } : {}),
+    sets: [0, 1].map(() => ({ reps: null, weight: null, done: false })),
+  });
+  const triSession = (): ActiveSession => ({
+    workout: {
+      day: '',
+      title: 'SHOULDERS',
+      dateLabel: '',
+      exercises: [mk('press'), mk('lat', 'lat'), mk('fly', 'lat'), mk('front', 'lat')],
+    },
+    focus: { exId: 'lat', setIdx: 0 },
+    pair: null,
+    startedAtMs: 0,
+  });
+  const walk = (s: ActiveSession, n: number) => {
+    const seen: string[] = [];
+    for (let i = 0; i < n; i++) {
+      seen.push(`${s.focus.exId}${s.focus.setIdx + 1}`);
+      s = applyLog(s, { reps: 12, weight: 10, bw: false });
+    }
+    return { seen, s };
+  };
+
+  test('logging walks A1 → B1 → C1 → A2 → B2 → C2, then leaves the group', () => {
+    const { seen, s } = walk(triSession(), 6);
+    expect(seen).toEqual(['lat1', 'fly1', 'front1', 'lat2', 'fly2', 'front2']);
+    expect(s.focus).toEqual({ exId: 'press', setIdx: 0 });
+  });
+
+  test('a finished member drops out of the rotation', () => {
+    const start = triSession();
+    const fly = start.workout.exercises.find(e => e.id === 'fly')!;
+    fly.sets.forEach(set => (set.skipped = true));
+    expect(walk(start, 4).seen).toEqual(['lat1', 'front1', 'lat2', 'front2']);
+  });
+
+  test('getGroupPartners lists the other members; a live ↔ pair wins', () => {
+    const s = triSession();
+    expect(getGroupPartners(s.workout, null, 'fly').map(e => e.id)).toEqual(['lat', 'front']);
+    expect(getGroupPartners(s.workout, null, 'press')).toEqual([]);
+    const pair = { a: 'fly', b: 'press' };
+    expect(getGroupPartners(s.workout, pair, 'fly').map(e => e.id)).toEqual(['press']);
   });
 });

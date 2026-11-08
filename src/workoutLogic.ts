@@ -76,23 +76,30 @@ export function summarizeWorkout(
   };
 }
 
-export function getPairPartnerId(
-  pair: Pair | null,
-  exId: string,
-): string | null {
-  if (!pair) return null;
-  if (pair.a === exId) return pair.b;
-  if (pair.b === exId) return pair.a;
-  return null;
-}
-
-export function getPairPartner(
+/**
+ * The exercises that rotate with `exId`, in order: the live ↔ pair if it
+ * holds `exId`, else its imported tri set / superset. Empty when neither.
+ */
+export function groupIds(
   workout: Workout,
   pair: Pair | null,
   exId: string,
-): Exercise | null {
-  const id = getPairPartnerId(pair, exId);
-  return id ? workout.exercises.find(e => e.id === id) ?? null : null;
+): string[] {
+  if (pair && (pair.a === exId || pair.b === exId)) return [pair.a, pair.b];
+  const key = workout.exercises.find(e => e.id === exId)?.superset;
+  if (!key) return [];
+  return workout.exercises.filter(e => e.superset === key).map(e => e.id);
+}
+
+export function getGroupPartners(
+  workout: Workout,
+  pair: Pair | null,
+  exId: string,
+): Exercise[] {
+  return groupIds(workout, pair, exId)
+    .filter(id => id !== exId)
+    .map(id => workout.exercises.find(e => e.id === id))
+    .filter((e): e is Exercise => !!e);
 }
 
 /**
@@ -125,7 +132,8 @@ export function suggestDraft(ex: Exercise, setIdx: number): Draft {
 /**
  * Find the next focus after logging or skipping a set.
  * Priority:
- *   1. If paired with the logged exercise, partner's next incomplete set.
+ *   1. If in a pair or tri set, the next member after it (wrapping around)
+ *      that has an incomplete set: A1 → B1 → C1 → A2 …
  *   2. Same exercise, next index that's incomplete.
  *   3. Any other exercise's first incomplete set.
  *   4. null when nothing remains.
@@ -136,11 +144,12 @@ export function nextFocus(
   loggedExId: string,
   loggedIdx: number,
 ): Focus | null {
-  const partnerId = getPairPartnerId(pair, loggedExId);
-  if (partnerId) {
-    const partner = findExercise(workout, partnerId);
-    const pIdx = firstIncompleteSetIdx(partner);
-    if (pIdx >= 0) return { exId: partnerId, setIdx: pIdx };
+  const group = groupIds(workout, pair, loggedExId);
+  const at = group.indexOf(loggedExId);
+  for (let k = 1; k < group.length; k++) {
+    const id = group[(at + k) % group.length];
+    const idx = firstIncompleteSetIdx(findExercise(workout, id));
+    if (idx >= 0) return { exId: id, setIdx: idx };
   }
   const ex = findExercise(workout, loggedExId);
   const nextIdx = ex.sets.findIndex(

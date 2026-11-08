@@ -20,6 +20,9 @@ export type Exercise = {
   // Per-set target reps for stacked/descending schemes, e.g. [5,4,3,2,1];
   // index-aligned with sets. Absent for uniform schemes.
   repScheme?: number[];
+  // Tri set / superset group: every member carries the lead exercise's id,
+  // and the live workout rotates through them set by set (A1 → B1 → C1 → A2).
+  superset?: string;
   sets: WorkoutSet[];
 };
 

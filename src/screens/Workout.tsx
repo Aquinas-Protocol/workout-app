@@ -21,7 +21,7 @@ import {
   canRemoveSet,
   findExercise,
   focusExercise as focusExerciseLogic,
-  getPairPartner,
+  getGroupPartners,
   suggestDraft,
   togglePair,
   totalDoneSets,
@@ -531,7 +531,7 @@ export function WorkoutScreen({
         showsVerticalScrollIndicator={false}
       >
         {shown.exercises.map(ex => {
-          const partner = getPairPartner(session.workout, session.pair, ex.id);
+          const partners = getGroupPartners(session.workout, session.pair, ex.id);
           const focused = session.focus.exId === ex.id;
           return (
             <View key={ex.id} style={{ marginBottom: theme.space.cardGap }}>
@@ -541,7 +541,11 @@ export function WorkoutScreen({
                 focusSetIdx={focused ? session.focus.setIdx : -1}
                 draft={draft}
                 setDraft={setDraft}
-                pairPartnerName={partner ? partner.name.split(' ')[0] : null}
+                pairPartnerName={
+                  partners.length > 0
+                    ? partners.map(p => p.name.split(' ')[0]).join(' · ')
+                    : null
+                }
                 pairing={pairing}
                 isPairTarget={!!pairing && pairing !== ex.id}
                 onFocusSet={i => onFocusSet(ex.id, i)}

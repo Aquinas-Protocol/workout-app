@@ -61,6 +61,8 @@ export function ImportModal({
   const [text, setText] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  // The text whose warnings are on screen; tapping IMPORT again imports it anyway.
+  const [warnedText, setWarnedText] = useState<string | null>(null);
   // Set while the user answers "Did you mean…" for near-duplicate names.
   const [review, setReview] = useState<Review | null>(null);
   // Exercise id → chosen entry key, or null for "keep as new".
@@ -71,6 +73,7 @@ export function ImportModal({
     setText('');
     setErrors([]);
     setWarnings([]);
+    setWarnedText(null);
     setReview(null);
     setAnswers({});
   };
@@ -89,6 +92,11 @@ export function ImportModal({
     }
     setWarnings(result.warnings);
     setErrors([]);
+    // Show what the parser skipped before importing; a second tap imports anyway.
+    if (result.warnings.length > 0 && warnedText !== text) {
+      setWarnedText(text);
+      return;
+    }
     const resolved = resolveImport(result.workout, library, aliases, distinct);
     if (resolved.questions.length > 0) {
       setReview(resolved);
@@ -393,7 +401,11 @@ export function ImportModal({
                   letterSpacing: -0.2,
                 }}
               >
-                {review ? 'ADD WORKOUT' : 'IMPORT'}{' '}
+                {review
+                  ? 'ADD WORKOUT'
+                  : warnedText === text && warnings.length > 0
+                    ? 'IMPORT ANYWAY'
+                    : 'IMPORT'}{' '}
                 <Text style={{ opacity: 0.6 }}>›</Text>
               </Text>
             </Pressable>

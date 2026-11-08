@@ -204,3 +204,83 @@ DEADLIFT 5 SETS X 5, 4, 3, 2, 1 REP
     expect(ex.sets[0]).toMatchObject({ reps: 5, weight: 115, done: true });
   });
 });
+
+describe('parseAppleNotes — tri sets / supersets', () => {
+  test('Day 3 paste: only the tri set block is grouped, all at 4×12', () => {
+    const text = [
+      'SEATED SHOULDER PRESS (DB) 4 SETS X 12 REPS',
+      'UPRIGHT ROW (DB) 4 SETS X 12 REPS',
+      'TRI SET LATERAL RAISE 4 SETS X 12 REPS',
+      '\tBENT OVER REVERSE FLY',
+      '\tFRONT RAISE',
+    ].join('\n');
+    const r = parseAppleNotes(text, 'Shoulders');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.warnings).toEqual([]);
+    const exs = r.workout.exercises;
+    expect(exs.map(e => e.name)).toEqual([
+      'SEATED SHOULDER PRESS',
+      'UPRIGHT ROW',
+      'LATERAL RAISE',
+      'BENT OVER REVERSE FLY',
+      'FRONT RAISE',
+    ]);
+    expect(exs.map(e => e.superset)).toEqual([
+      undefined,
+      undefined,
+      'lateral-raise',
+      'lateral-raise',
+      'lateral-raise',
+    ]);
+    for (const e of exs) {
+      expect(e.targetSets).toBe(4);
+      expect(e.targetReps).toBe(12);
+      expect(e.sets).toHaveLength(4);
+    }
+  });
+
+  test('the next ordinary header closes the group', () => {
+    const text = `
+SUPERSET CURL 3x10
+TRICEP PUSHDOWN
+SQUATS 3x5
+`.trim();
+    const r = parseAppleNotes(text);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises.map(e => [e.name, e.superset])).toEqual([
+      ['CURL', 'curl'],
+      ['TRICEP PUSHDOWN', 'curl'],
+      ['SQUATS', undefined],
+    ]);
+  });
+
+  test('members keep their own modifier and logged sets, and inherit a rep scheme', () => {
+    const text = `
+GIANT SET ROW 3 SETS X 10, 8, 6
+FACE PULL (CABLE)
+10 @ 30
+SHRUG
+`.trim();
+    const r = parseAppleNotes(text);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const [row, face, shrug] = r.workout.exercises;
+    expect(face).toMatchObject({ name: 'FACE PULL', modifier: 'CABLE', superset: 'row' });
+    expect(face.repScheme).toEqual([10, 8, 6]);
+    expect(face.sets[0]).toMatchObject({ reps: 10, weight: 30, done: true });
+    expect(row.superset).toBe('row');
+    expect(shrug.superset).toBe('row');
+    expect(shrug.sets).toHaveLength(3);
+  });
+
+  test('a bare name outside a group is still skipped with a warning', () => {
+    const r = parseAppleNotes('BENCH PRESS 4x10\nFRONT RAISE');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises).toHaveLength(1);
+    expect(r.workout.exercises[0].superset).toBeUndefined();
+    expect(r.warnings.some(w => /FRONT RAISE/.test(w))).toBe(true);
+  });
+});
