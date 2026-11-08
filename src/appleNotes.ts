@@ -4,6 +4,8 @@
 //   BENCH PRESS (DB) 4 SETS X 10 REPS
 //   BENCH PRESS (DB) 4x10
 //   LATERAL RAISE 4 x 10
+//   WALKING LUNGES 4 SETS X 12 STEPS (EACH WAY)
+// A note in parens after the reps is kept as the modifier, like (DB).
 //
 // Sets line examples (separated by , or ;):
 //   10 @ 40 ea, 8 @ 40 ea, 9 @ 40 ea
@@ -24,7 +26,7 @@
 import type { Exercise, Workout, WorkoutSet } from './types';
 
 const HEADER_RE =
-  /^(.+?)(?:\s*\(([^)]+)\))?\s+(\d+)\s*(?:SETS?\s*)?[X×x]\s*(\d+(?:\s*[,/]\s*\d+)*)(?:\s*REPS?)?$/i;
+  /^(.+?)(?:\s*\(([^)]+)\))?\s+(\d+)\s*(?:SETS?\s*)?[X×x]\s*(\d+(?:\s*[,/]\s*\d+)*)(?:\s*(?:REPS?|STEPS?))?(?:\s*\(([^)]+)\))?$/i;
 const SET_RE = /^(\d+)\s*@\s*(BW|\d+)\s*(ea)?$/i;
 const SET_BW_SHORT_RE = /^(\d+)\s+BW$/i;
 const GROUP_PREFIX_RE = /^(?:TRI|SUPER|GIANT)[\s-]*SET\s+/i;
@@ -119,7 +121,11 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
     const header = HEADER_RE.exec(line);
     if (header) {
       closeCurrent();
-      const [, name, modifier, sets, reps] = header;
+      const [, name, modifier, sets, reps, note] = header;
+      const mod = [modifier, note]
+        .filter((s): s is string => !!s)
+        .map(s => s.trim().toUpperCase())
+        .join(', ');
       const grouped = GROUP_PREFIX_RE.test(name);
       const cleanName = name.replace(GROUP_PREFIX_RE, '').trim().toUpperCase();
       const id = slugify(cleanName, ids);
@@ -135,7 +141,7 @@ export function parseAppleNotes(text: string, title?: string): ParseResult {
       current = {
         id,
         name: cleanName,
-        modifier: modifier?.trim().toUpperCase(),
+        modifier: mod || undefined,
         targetSets: isScheme ? repList.length : statedSets,
         targetReps: repList[0],
         ...(isScheme ? { repScheme: repList } : {}),

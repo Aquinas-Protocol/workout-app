@@ -284,3 +284,42 @@ SHRUG
     expect(r.warnings.some(w => /FRONT RAISE/.test(w))).toBe(true);
   });
 });
+
+describe('parseAppleNotes — STEPS unit and trailing notes', () => {
+  test('Day 2 paste: lunges parse as 4×12 with EACH WAY kept as the modifier', () => {
+    const text = `
+ZERCHER SQUAT 4 SETS X 12 REPS
+GLUTE BRIDGE 4 SETS X 12 REPS
+WALKING LUNGES 4 SETS X 12 STEPS (EACH WAY)
+LEG CURLS 4 SETS X 12 REPS
+CALF RAISE 4 SETS X 12 REPS
+`.trim();
+    const r = parseAppleNotes(text, 'Day 2 - Legs');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.warnings).toEqual([]);
+    expect(r.workout.exercises).toHaveLength(5);
+    const lunges = r.workout.exercises[2];
+    expect(lunges).toMatchObject({
+      name: 'WALKING LUNGES',
+      modifier: 'EACH WAY',
+      targetSets: 4,
+      targetReps: 12,
+    });
+    expect(lunges.sets).toHaveLength(4);
+  });
+
+  test('a (DB) written after the reps becomes the modifier', () => {
+    const r = parseAppleNotes('BENCH PRESS 4x10 (DB)');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises[0]).toMatchObject({ name: 'BENCH PRESS', modifier: 'DB' });
+  });
+
+  test('parens before and after the reps are both kept', () => {
+    const r = parseAppleNotes('LUNGES (DB) 3 SETS X 10 STEPS (EACH WAY)');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.workout.exercises[0]).toMatchObject({ name: 'LUNGES', modifier: 'DB, EACH WAY' });
+  });
+});
